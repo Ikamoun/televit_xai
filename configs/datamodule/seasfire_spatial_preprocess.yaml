@@ -1,4 +1,4 @@
-_target_: src.datamodules.seasfire_local_global_datamodule.SeasFireLocalGlobalDataModule
+_target_: src.datamodules.seasfire_local_global_datamodule_preprocess.SeasFireLocalGlobalDataModule
 ds_path: ${ds_path}
 output_path : ${output_path}
 ds_path_global: ''

@@ -227,8 +227,6 @@ from pathlib import Path
 #             persistent_workers=True
 #         )
 
-
-
 class SeasFireLocalGlobalDataModule(LightningDataModule):
 
     def __init__(
@@ -298,40 +296,43 @@ class SeasFireLocalGlobalDataModule(LightningDataModule):
                 self.global_ds = None
 
             # Use the simpler `sample_dataset` function without OCI
-            # train_batches, self.mean_std_dict,n_batches = sample_dataset(self.ds.copy(),
-            #                                                    input_vars=self.input_vars,
-            #                                                    target=self.target,
-            #                                                    target_shift=-self.target_shift,
-            #                                                    split='train',
-            #                                                    num_timesteps=self.num_timesteps,
-            #                                                    dim_lon=self.patch_size[1],
-            #                                                    dim_lat=self.patch_size[2],
-            #                                                    dim_time=self.patch_size[0])
+            train_batches, self.mean_std_dict,n_batches = sample_dataset(self.ds.copy(),
+                                                               input_vars=self.input_vars,
+                                                               target=self.target,
+                                                               target_shift=-self.target_shift,
+                                                               output_path=self.output_path,
+                                                               split='train',
+                                                               num_timesteps=self.num_timesteps,
+                                                               dim_lon=self.patch_size[1],
+                                                               dim_lat=self.patch_size[2],
+                                                               dim_time=self.patch_size[0])
             
 
-            # if not (Path(self.stats_dir) / f'mean_std_dict_{self.target_shift}.json').exists():
-            #     with open(f'mean_std_dict_{self.target_shift}.json', 'w') as f:
-            #         f.write(json.dumps(self.mean_std_dict))
+            if not (Path(self.stats_dir) / f'mean_std_dict_{self.target_shift}.json').exists():
+                with open(f'mean_std_dict_{self.target_shift}.json', 'w') as f:
+                    f.write(json.dumps(self.mean_std_dict))
 
-            # val_batches, _,_ = sample_dataset(self.ds.copy(),
-            #                                 input_vars=self.input_vars,
-            #                                 target=self.target,
-            #                                 target_shift=-self.target_shift,
-            #                                 split='val',
-            #                                 num_timesteps=self.num_timesteps,
-            #                                 dim_lon=self.patch_size[1],
-            #                                 dim_lat=self.patch_size[2],
-            #                                 dim_time=self.patch_size[0])
+            val_batches, _,_ = sample_dataset(self.ds.copy(),
+                                            input_vars=self.input_vars,
+                                            target=self.target,
+                                            target_shift=-self.target_shift,
+                                            output_path= self.output_path,
+                                            split='val',
+                                            num_timesteps=self.num_timesteps,
+                                            dim_lon=self.patch_size[1],
+                                            dim_lat=self.patch_size[2],
+                                            dim_time=self.patch_size[0])
 
-            # test_batches, _,_ = sample_dataset(self.ds.copy(),
-            #                                  input_vars=self.input_vars,
-            #                                  target=self.target,
-            #                                  target_shift=-self.target_shift,
-            #                                  split='test',
-            #                                  num_timesteps=self.num_timesteps,
-            #                                  dim_lon=self.patch_size[1],
-            #                                  dim_lat=self.patch_size[2],
-            #                                  dim_time=self.patch_size[0])
+            test_batches, _,_ = sample_dataset(self.ds.copy(),
+                                             input_vars=self.input_vars,
+                                             target=self.target,
+                                             target_shift=-self.target_shift,
+                                             output_path= self.output_path,
+                                             split='test',
+                                             num_timesteps=self.num_timesteps,
+                                             dim_lon=self.patch_size[1],
+                                             dim_lat=self.patch_size[2],
+                                             dim_time=self.patch_size[0])
 
             # for i in range(16):
             #     batch = test_batches[i]
@@ -349,13 +350,6 @@ class SeasFireLocalGlobalDataModule(LightningDataModule):
         
 
             # Create dataset objects
-            train_batches = self.output_path +'/train/saved_batches_info.json'
-            self.mean_std_dict = self.output_path +'/train/mean_std.json'
-
-            val_batches = self.output_path +'/val/saved_batches_info.json'
-
-            test_batches = self.output_path +'/test/saved_batches_info.json'
-
             self.data_train = BatcherDS(train_batches, input_vars=self.input_vars,
                                         positional_vars=self.positional_vars, target=self.target,
                                         mean_std_dict=self.mean_std_dict)
