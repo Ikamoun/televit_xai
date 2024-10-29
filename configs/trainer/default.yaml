@@ -5,6 +5,9 @@ default_root_dir: ${paths.output_dir}
 min_epochs: 1 # prevents early stopping
 max_epochs: 100
 
+max_steps: 10000
+val_check_interval: 200
+
 accelerator: gpu
 devices: 1
 

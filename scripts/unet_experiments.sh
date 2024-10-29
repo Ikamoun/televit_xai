@@ -3,7 +3,7 @@
 # Run from root folder with: bash scripts/schedule.sh
 
 export HYDRA_FULL_ERROR=1
-export CUDA_VISIBLE_DEVICES=0
+export CUDA_VISIBLE_DEVICES=1
 
 max_epochs=30
 experiment="iccv_hadr_unet_experiments"

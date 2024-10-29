@@ -1,0 +1,174 @@
+# @package _global_
+
+# specify here default configuration
+# order of defaults determines the order in which configs override each other
+defaults:
+  - _self_
+  - datamodule: seasfire_spatial.yaml
+  - model: seasfire_prototype.yaml
+  - callbacks: default.yaml
+  - logger: null # set logger here or use command line (e.g. `python train.py logger=tensorboard`)
+  - trainer: default.yaml
+  - paths: default.yaml
+  - extras: default.yaml
+  - hydra: default.yaml
+
+  # experiment configs allow for version control of specific hyperparameters
+  # e.g. best hyperparameters for given model and datamodule
+  - experiment: null
+
+  # config for hyperparameter optimization
+  - hparams_search: null
+
+  # optional local config for machine/user specific settings
+  # it's optional since it doesn't need to exist and is excluded from version control
+  - optional local: default.yaml
+
+  # debugging config (enable through command line, e.g. `python train.py debug=default)
+  - debug: null
+
+# task name, determines output directory path
+task_name: "train"
+
+ds_path : ${oc.env:DATASET_PATH}
+ds_path_global : ${oc.env:DATASET_PATH_GLOBAL}
+
+output_path : ${oc.env:OUTPUT_PATH}
+
+# datacube vars
+# Spatio-temporal: ['cams_co2fire', 'cams_frpfire', 'drought_code_max', 'drought_code_mean', 'fcci_ba', 'fcci_fraction_of_burnable_area', 'fcci_fraction_of_observed_area', 'fcci_number_of_patches', 'fwi_max', 'fwi_mean', 'gfed_ba', 'gwis_ba', 'lai', 'lccs_class_0', 'lccs_class_1', 'lccs_class_2', 'lccs_class_3', 'lccs_class_4', 'lccs_class_5', 'lccs_class_6', 'lccs_class_7', 'lccs_class_8', 'lst_day', 'mslp', 'ndvi', 'pop_dens', 'rel_hum', 'skt', 'ssr', 'ssrd', 'sst', 'swvl1', 't2m_max', 't2m_mean', 't2m_min', 'tp', 'vpd', 'ws10']
+# Spatial: ['area', 'gfed_region', 'lsm']
+# Temporal: ['fcci_ba_valid_mask', 'gfed_ba_valid_mask', 'gwis_ba_valid_mask', 'oci_censo', 'oci_ea', 'oci_epo', 'oci_gmsst', 'oci_nao', 'oci_nina34_anom', 'oci_pdo', 'oci_pna', 'oci_soi', 'oci_wp']
+
+
+input_vars:
+  [
+#    'cams_co2fire',
+#    'cams_frpfire',
+#    'drought_code_max',
+#    'drought_code_mean',
+#    'fcci_ba',
+#    'fcci_fraction_of_burnable_area',
+#    'fcci_fraction_of_observed_area',
+#    'fcci_number_of_patches',
+#    'fwi_max',
+#    'fwi_mean',
+#    'gfed_ba',
+#    'gwis_ba',
+#    'lai',
+#    'lccs_class_0',
+#    'lccs_class_1',
+#    'lccs_class_2',
+#    'lccs_class_3',
+#    'lccs_class_4',
+#    'lccs_class_5',
+#    'lccs_class_6',
+#    'lccs_class_7',
+#    'lccs_class_8',
+    'lst_day',
+#    'mslp',
+    'ndvi',
+    #'pop_dens',
+    'rel_hum',
+#    'skt',
+#    'ssr',
+    'ssrd',
+    'sst',
+#   'swvl1',
+#    't2m_max',
+#    't2m_mean',
+    't2m_min',
+    'tp',
+    'vpd',
+#    'ws10'
+  ]
+
+positional_vars: ['cos_lat', 'sin_lat', 'cos_lon', 'sin_lon']
+#positional_vars: []
+log_transform_vars: [tp, pop_dens]
+
+
+# oci_vars: [
+#   'oci_censo',
+#   'oci_ea',
+#   'oci_epo',
+#   'oci_gmsst',
+#   'oci_nao',
+#   'oci_nina34_anom',
+#   'oci_pdo',
+#   'oci_pna',
+#   'oci_soi',
+#   'oci_wp'
+# ]
+
+# oci_lag: 10
+
+patch_size: [1, 128, 128]
+# What is the target variable?
+# One of 'cams_co2fire', 'cams_frpfire', 'fcci_ba', 'gfed_ba', 'gwis_ba'
+target : 'gwis_ba'
+
+# How many weeks ahead to predict the target (!!! POSITIVE VALUES !!!)
+target_shift : 1
+
+# tags to help you identify your experiments
+# you can overwrite this in experiment configs
+# overwrite from command line with `python train.py tags="[first_tag, second_tag]"`
+# appending lists from command line is currently not supported :(
+# https://github.com/facebookresearch/hydra/issues/1547
+tags: ["dev"]
+
+# set False to skip model training
+train: True
+
+# evaluate on test set, using best model weights achieved during training
+# lightning chooses best weights based on the metric specified in checkpoint callback
+test: True
+
+# simply provide checkpoint path to resume training
+ckpt_path: null
+
+# seed for random number generators in pytorch, numpy and python.random
+seed: 42
+
+experiment_name: proto
+start_checkpoint: ''
+early_stopping_patience_last_layer: 1000 #why
+warmup_step: 0
+finetune_steps: 10000
+joint_steps: 10000
+finetune_epochs: 5
+joint_epochs: 8
+warmup_batch_size: 2
+joint_batch_size: 2
+
+_target_: src.models.module.PatchClassificationModule
+#model_dir: "/home/ines/televit_xai/model_output" #to do change this as global variable in .env file
+results_dir: ${oc.env:RESULTS_DIR}
+training_phase: 1
+max_steps: 1000
+poly_lr_power: 0.9
+loss_weight_crs_ent: 1.0
+loss_weight_l1: 0.0001 # fine tunining ( 64*2)  augmenter ou plus long 
+loss_weight_kld: 0.25  #diversity loss
+joint_optimizer_lr_features: 0.005  # data specific ratio unet et prototype unet 0.001, common 0.0001
+joint_optimizer_lr_add_on_layers: 0.0001
+joint_optimizer_lr_prototype_vectors: 0.005 ## et ça
+joint_optimizer_weight_decay: 0.0005  # unet 0.000001 here 0.0005
+warm_optimizer_lr_add_on_layers: 0.0001
+warm_optimizer_lr_prototype_vectors: 0.0001
+warm_optimizer_weight_decay: 0.001
+last_layer_optimizer_lr: 0.0001
+ignore_void_class: False
+iter_size: 1
+_device : "cuda:0"
+
+patch_classification: True
+
+# step1 warmup not train tout sauf resnet pas last layer (no train)
+# joint train tout  preloaded ou pas pour unet / train from scratch
+# pushing step ( perdre en performance)
+# last layer never train que dans fine tune step (prototype ne bouge plus frozen) et train last layer l1 loss
+# l1 log weight and biases
+
+# pas de pruning

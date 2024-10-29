@@ -212,7 +212,7 @@ def sample_dataset(ds, input_vars, target, target_shift, output_path, split='tra
 
     # Limit timesteps if specified
     if num_timesteps > 0:
-        ds = ds.isel(time=slice(0, num_timesteps))
+        ds = ds.isel(time=slice(0, num_timesteps-1))
 
     # Select only the necessary variables
     ds = ds[input_vars + [target]]
@@ -243,7 +243,8 @@ def sample_dataset(ds, input_vars, target, target_shift, output_path, split='tra
     n_batches = 0
     n_pos = 0
     saved_batches_info = []  # Metadata about saved batches
-
+    num_positive_pixels = 0
+    num_null_pixels = 0
     for i in range(0, ds.sizes['time'], batch_size):
         batch_ds = ds.isel(time=slice(i, i + batch_size))
 
@@ -257,6 +258,12 @@ def sample_dataset(ds, input_vars, target, target_shift, output_path, split='tra
             )
             for j, batch in enumerate(bgen):
                 if batch.isel(time=-1)[target].sum().compute() > 0:
+                    target_data = batch.isel(time=-1)[target].copy()
+                    target_data = target_data.compute()
+                    target_data = np.nan_to_num(target_data, nan=0)
+                    target_data = np.where(target_data != 0, 1, 0)
+                    num_positive_pixels +=  (target_data > 0).sum()
+                    num_null_pixels += (target_data == 0).sum()
                     # Save batch with positive target values to disk
                     batch_filename = f"{output_dir}/batch_{i}_{j}.nc"
                     batch.to_netcdf(batch_filename)
@@ -271,7 +278,8 @@ def sample_dataset(ds, input_vars, target, target_shift, output_path, split='tra
 
     print('# of batches', n_batches)
     print('# of positives', n_pos)
-
+    print('# of positive pixels', num_positive_pixels)
+    print('# of null pixels', num_null_pixels)
     # Specify the filename
     batch_path = output_dir +'/saved_batches_info.json'
     os.makedirs(os.path.dirname(batch_path), exist_ok=True)
@@ -322,13 +330,14 @@ def sample_dataset(ds, input_vars, target, target_shift, output_path, split='tra
 
 
 class BatcherDS(Dataset):
-    def __init__(self, batches_path, input_vars, positional_vars, target, mean_std_dict,task='classification'):
+    def __init__(self, batches_path, input_vars, positional_vars, target, mean_std_dict,task='classification', push_prototypes = False):
         """
         batches: List of dictionaries containing metadata of each batch (e.g., file paths)
         input_vars: List of input variable names
         positional_vars: List of positional variable names (e.g., latitude, longitude)
         target: The name of the target variable
         mean_std_dict: Dictionary with mean and std values for normalization
+        push_prototypes: to normalize or not #to do changge this 
         """
 
         # Load the JSON file
@@ -343,6 +352,7 @@ class BatcherDS(Dataset):
         self.positional_vars = positional_vars
         self.target = target
         self.mean_std_dict = mean_std_dict
+        self.push_prototypes = push_prototypes
 
         self.mean = np.stack([mean_std_dict[f'{var}_mean'] for var in input_vars])
         self.std = np.stack([mean_std_dict[f'{var}_std'] for var in input_vars])
@@ -361,16 +371,17 @@ class BatcherDS(Dataset):
 
         # Extract the input and target variables
         inputs = [batch_ds[var].values for var in self.input_vars]
-        positional = [batch_ds[var].values for var in self.positional_vars]
+
+        #positional = [batch_ds[var].values for var in self.positional_vars]
         target = batch_ds[self.target].values
 
+        #if not self.push_prototypes:
         # Normalize inputs using the provided mean and std
         for i, var in enumerate(self.input_vars):
-
             inputs[i] = (inputs[i] - self.mean_std_dict[f'{var}_mean']) / self.mean_std_dict[f'{var}_std']
+
         inputs = [x.reshape(128, 128) for x in inputs]
         target = target[0]
-
         # Convert inputs and target to PyTorch tensors
         #inputs_tensor = torch.tensor(inputs, dtype=torch.float32)
         #positional_tensor = torch.tensor(positional, dtype=torch.float32)
@@ -382,4 +393,3 @@ class BatcherDS(Dataset):
              target = np.where(target != 0, 1, 0)
 
         return  inputs, target
-        

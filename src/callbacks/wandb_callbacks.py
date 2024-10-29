@@ -77,38 +77,38 @@ class LogValPredictionsSegmentation(Callback):
             targets = torch.cat(self.targets[:self.num_samples])
             inputs = torch.cat(self.inputs[:self.num_samples])
 
-            imgs = []
-            input_vars = pl_module.hparams.input_vars
-            for i in range(self.num_samples):
-                fig, axs = plt.subplots(1, len(input_vars) + 2, figsize=(20, 4))
-                for var_idx in range(len(input_vars)):
-                    im = axs[var_idx].imshow(inputs[i][var_idx].detach().cpu().numpy().squeeze())
-                    axs[var_idx].set_title(input_vars[var_idx])
-                im = axs[-2].imshow(preds[i].detach().cpu().numpy().squeeze())
-                axs[-2].set_title('Prediction')
-                im = axs[-1].imshow(targets[i].detach().cpu().numpy().squeeze())
-                axs[-1].set_title('Target')
-                imgs.append(wandb.Image(fig, caption=f'Val {i}'))
+            # imgs = []
+            # input_vars = pl_module.hparams.input_vars
+            # for i in range(self.num_samples):
+            #     fig, axs = plt.subplots(1, len(input_vars) + 2, figsize=(20, 4))
+            #     for var_idx in range(len(input_vars)):
+            #         im = axs[var_idx].imshow(inputs[i][var_idx].detach().cpu().numpy().squeeze())
+            #         axs[var_idx].set_title(input_vars[var_idx])
+            #     im = axs[-2].imshow(preds[i].detach().cpu().numpy().squeeze())
+            #     axs[-2].set_title('Prediction')
+            #     im = axs[-1].imshow(targets[i].detach().cpu().numpy().squeeze())
+            #     axs[-1].set_title('Target')
+            #     imgs.append(wandb.Image(fig, caption=f'Val {i}'))
 
-            # log the images as wandb Image
-            experiment.log(
-                {
-                    "val/target-prediction maps": imgs
-                }
-            )
+            # #log the images as wandb Image
+            # experiment.log(
+            #     {
+            #         "val/target-prediction maps": imgs
+            #     }
+            # )
 
 
-            fig, ax = plt.subplots(figsize=(10, 10))
-            sns.scatterplot(x=targets.flatten().detach().cpu().numpy(),
-                            y=preds.flatten().detach().cpu().numpy(),
-                            ax=ax, alpha=0.1)
-            ax.set_xlabel('Target')
-            ax.set_ylabel('Prediction')
-            experiment.log(
-                {
-                    "val/target-prediction scatter": wandb.Image(fig)
-                }
-            )
+            # fig, ax = plt.subplots(figsize=(10, 10))
+            # sns.scatterplot(x=targets.flatten().detach().cpu().numpy(),
+            #                 y=preds.flatten().detach().cpu().numpy(),
+            #                 ax=ax, alpha=0.1)
+            # ax.set_xlabel('Target')
+            # ax.set_ylabel('Prediction')
+            # experiment.log(
+            #     {
+            #         "val/target-prediction scatter": wandb.Image(fig)
+            #     }
+            # )
 
             # clear the lists
             self.preds = []

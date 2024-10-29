@@ -247,6 +247,7 @@ class SeasFireLocalGlobalDataModule(LightningDataModule):
             pin_memory: bool = False,
             debug: bool = False,
             stats_dir: str = os.getcwd() + '/stats',
+            push_prototypes: bool = False
     ):
         super().__init__()
 
@@ -259,6 +260,7 @@ class SeasFireLocalGlobalDataModule(LightningDataModule):
             self.positional_vars = positional_vars
 
         self.save_hyperparameters(logger=False)
+        self.push_prototypes = push_prototypes
         self.ds_path = ds_path
         self.output_path = output_path
         self.ds_path_global = ds_path_global
@@ -280,7 +282,7 @@ class SeasFireLocalGlobalDataModule(LightningDataModule):
             self.num_timesteps = -1
 
         self.num_timesteps = -1
-
+    
     def setup(self, stage: Optional[str] = None):
         if not self.data_train and not self.data_val and not self.data_test:
             print(self.ds[self.input_vars])
@@ -350,21 +352,23 @@ class SeasFireLocalGlobalDataModule(LightningDataModule):
 
             # Create dataset objects
             train_batches = self.output_path +'/train/saved_batches_info.json'
+            
             self.mean_std_dict = self.output_path +'/train/mean_std.json'
 
             val_batches = self.output_path +'/val/saved_batches_info.json'
 
             test_batches = self.output_path +'/test/saved_batches_info.json'
 
+
             self.data_train = BatcherDS(train_batches, input_vars=self.input_vars,
                                         positional_vars=self.positional_vars, target=self.target,
-                                        mean_std_dict=self.mean_std_dict)
+                                        mean_std_dict=self.mean_std_dict,push_prototypes = self.push_prototypes)
             self.data_val = BatcherDS(val_batches, input_vars=self.input_vars,
                                       positional_vars=self.positional_vars, target=self.target,
-                                      mean_std_dict=self.mean_std_dict)
+                                      mean_std_dict=self.mean_std_dict,push_prototypes = self.push_prototypes)
             self.data_test = BatcherDS(test_batches, input_vars=self.input_vars,
                                        positional_vars=self.positional_vars, target=self.target,
-                                       mean_std_dict=self.mean_std_dict)
+                                       mean_std_dict=self.mean_std_dict,push_prototypes = self.push_prototypes)
 
             # for i in range(16):
             #     inputs, target = self.data_test[i]  # Get inputs and target from BatcherDS
