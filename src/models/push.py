@@ -40,13 +40,6 @@ def push_prototypes(dataset: SeasFireLocalGlobalDataModule,
     CATEGORIES = SEASFIRE_CATEGORIES
 
     cls2name = ID_MAPPING
-    # cls2name = {k - 1: i for i, k in ID_MAPPING.items() if k > 0}
-    # if pascal:
-    #     cls2name = {i: CATEGORIES[k + 1] for i, k in cls2name.items() if k < len(CATEGORIES) - 1}
-    # else:
-    #     cls2name = {i: CATEGORIES[k] for i, k in cls2name.items()}
-
-    # print(cls2name)
 
     if hasattr(prototype_network_parallel, 'module'):
         prototype_network_parallel = prototype_network_parallel.module
@@ -98,32 +91,15 @@ def push_prototypes(dataset: SeasFireLocalGlobalDataModule,
 
     num_classes = prototype_network_parallel.num_classes
 
-    # for model that ignores void class 
-    # if (hasattr(prototype_network_parallel, 'void_class') and
-    #         not prototype_network_parallel.void_class):
-    #     num_classes = num_classes + 1
-
-#to do; change this upon key type
 
     log.info(f'Updating prototypes...')
-    # done changed this to adapt to my datamodule
+
     for push_iter in tqdm(range(len(dataset.data_train)), desc='updating prototypes', total=len(dataset.data_train)):
         '''
         start_index_of_search keeps track of the index of the image
         assigned to serve as prototype
         '''
-        inputs, target= dataset.data_train[push_iter]
-
-        # with open(img_path, 'rb') as f:
-        #     img = Image.open(f).convert('RGB')
-        img = inputs
-        # remove margins which were used for training
-        #margin_size = dataset.image_margin_size
-        #img = img.crop((margin_size, margin_size, img.width - margin_size, img.height - margin_size))
-
-        #gt_ann = np.load(os.path.join(dataset.annotations_dir, img_id + '.npy'))
-
-        gt_ann = target
+        img, gt_ann= dataset.data_train[push_iter]
 
         with torch.no_grad():
             update_prototypes_on_image(dataset,
@@ -193,30 +169,26 @@ def update_prototypes_on_image(dataset: SeasFireLocalGlobalDataModule,
     # window_size=dataset.window_size,
     # window_shift=512,
     # batch_size=4)
-
-    # if dataset.convert_targets is not None:
-    #     img_y = dataset.convert_targets(img_y)
     device = torch.device("cuda:0")
 
 
     img_y = torch.Tensor(img_y).to(device) 
-    # img_tensor = to_normalized_tensor(img).unsqueeze(0).cuda()
-    # no need to normalize the img from batch is already normalized
     img_tensor = torch.Tensor(img).unsqueeze(0)
 
-    img_tensor = img_tensor.to(device) 
+    img_tensor = img_tensor.to(device)
     conv_features = ppnet.conv_features(img_tensor) #[1, 64, 128, 128]
     # save RAM
     del img_tensor
 
     logits, distances = ppnet.forward_from_conv_features(conv_features)
-
+    distances = - distances
     model_output_height = conv_features.shape[2]
     model_output_width = conv_features.shape[3]
 
     img_height = img_y.shape[0]
     img_width = img_y.shape[1]
 
+    #here it is 1
     patch_height = img_height / model_output_height
     patch_width = img_width / model_output_width
 
@@ -225,8 +197,8 @@ def update_prototypes_on_image(dataset: SeasFireLocalGlobalDataModule,
     # distances = torch.nn.functional.interpolate(distances, size=(1024, 2048),
     # mode='bilinear', align_corners=False)
 
-    protoL_input_ = conv_features[0].detach().cpu().numpy()
-    proto_dist_ = distances[0].permute(1, 2, 0).detach().cpu().numpy()
+    protoL_input_ = conv_features[0].detach().cpu().numpy()  # [nb_feature_proto, img_size]
+    proto_dist_ = distances[0].permute(1, 2, 0).detach().cpu().numpy() #[img_size, nb_proto]
 
     del conv_features, distances
 
@@ -250,8 +222,7 @@ def update_prototypes_on_image(dataset: SeasFireLocalGlobalDataModule,
 
     prototype_shape = ppnet.prototype_shape
     n_prototypes = prototype_shape[0]
-    max_dist = prototype_shape[1] * prototype_shape[2] * prototype_shape[3]
-
+    max_dist = prototype_shape[1] * prototype_shape[2] * prototype_shape[3]  # nb_features
     # get the whole image
 
     original_img_j = np.transpose(img, (2, 0, 1))  #to do understand why it changed 128,8,128
@@ -269,19 +240,16 @@ def update_prototypes_on_image(dataset: SeasFireLocalGlobalDataModule,
 
     for j in range(n_prototypes):
         # target_class is the class of the class_specific prototype
-        target_class = torch.argmax(ppnet.prototype_class_identity[j]).item()
-
+        target_class = torch.argmax(ppnet.prototype_class_identity[j]).item() #imatrix 1 0 0 1 
+        target_class = 1 - target_class # to do so that the 10 first to fire 10 other non fire
         # if there are no pixels of the target_class in this image
         # we go on to the next prototype
         if len(class_to_patch_index_dict[target_class]) == 0:
             print("skip")
             continue
-
-        # to do should i define how to split my image, to get patches and not pixel
         # proto_dist_.shape = (patches_rows, patches_cols, n_prototypes)
         all_dist = np.asarray([proto_dist_[patch_i, patch_j, j]
-                               for patch_i, patch_j in class_to_patch_index_dict[target_class]])  # get the distance for each pixel of the corresponding class
-
+                               for patch_i, patch_j in class_to_patch_index_dict[target_class]])  # get the distance for each pixel of the corresponding prototype
         batch_argmin_proto_dist = np.argmin(all_dist)
         batch_min_proto_dist = all_dist[batch_argmin_proto_dist]
 
@@ -295,7 +263,6 @@ def update_prototypes_on_image(dataset: SeasFireLocalGlobalDataModule,
             patch_i, patch_j = batch_argmin_proto_dist
 
             # retrieve the corresponding feature map patch
-            # ProtoL.shape = (64, 129, 257)
             batch_min_fmap_patch_j = protoL_input_[:, patch_i:patch_i + 1, patch_j:patch_j + 1]
 
             # batch_min_fmap_patch_j.shape = (64, 1, 1)
@@ -331,15 +298,17 @@ def update_prototypes_on_image(dataset: SeasFireLocalGlobalDataModule,
                 proto_rf_boxes[j, 5] = target_class
 
             # find the highly activated region of the original image
-            proto_dist_img_j = proto_dist_[:, :, j]
+            proto_dist_img_j = proto_dist_[:, :, j] #image shape
 
             if ppnet.prototype_activation_function == 'log':
                 proto_act_img_j = np.log(
                     (proto_dist_img_j + 1) / (proto_dist_img_j + ppnet.epsilon))
             elif ppnet.prototype_activation_function == 'linear':
-                proto_act_img_j = max_dist - proto_dist_img_j
+                proto_act_img_j = proto_act_img_j = np.log(
+                    (proto_dist_img_j + 1) / (proto_dist_img_j + ppnet.epsilon)) #max_dist - proto_dist_img_j
             else:
                 proto_act_img_j = prototype_activation_function_in_numpy(proto_dist_img_j)
+
 
             upsampled_act_img_j = cv2.resize(proto_act_img_j, dsize=(original_img_width, original_img_height),
                                              interpolation=cv2.INTER_CUBIC)
@@ -387,53 +356,31 @@ def update_prototypes_on_image(dataset: SeasFireLocalGlobalDataModule,
             rows = 2 
             cols = 4
             if dir_for_saving_prototypes is not None:
+                # save the target
                 cls_name = cls2name[target_class]
                 dir_for_saving_prototypes_cls = os.path.join(dir_for_saving_prototypes, cls_name)
                 os.makedirs(dir_for_saving_prototypes_cls, exist_ok=True)
-                DPI = 100
 
-                # save segmentation
-                #plt.figure(figsize=(img_width / DPI, img_height / DPI))
-                #plt.figure(figsize=(img_width / DPI, img_height / DPI))
-                # plt.imshow(original_img_j[:,:,0])  #to do need to change this and have a picture per channel
-                # #to do check the target size no need of -1
-
-                #DONE changed this to get on image per input var as we don't have and RGB case
                 img_y_np = img_y.cpu().numpy()
                 plt.imshow(img_y_np)
                 plt.axis('off')
-                #plt.margins(0, 0)
+
                 plt.savefig(os.path.join(dir_for_saving_prototypes_cls,
                                         prototype_img_filename_prefix + f'_{j}-target.png')) #to do change this to get the name of the variable
                 plt.close()
 
-                # for channel in range(len(input_var)): # to do change this with the right format 
-                #     #plt.figure(figsize=(img_width / DPI, img_height / DPI))
-                #     plt.imshow(original_img_j[:,:,channel], cmap='gray')
-                #     plt.title(f"Channel {input_var[channel]}")
-           
-
-                #     plt.imshow(pred, alpha=0.7, cmap='Reds')
-                #     plt.axis('off')
-                #     #plt.subplots_adjust(top=1, bottom=0, right=1, left=0,
-                #     #                    hspace=0, wspace=0)
-                #     #plt.margins(0, 0)
-                #     plt.savefig(os.path.join(dir_for_saving_prototypes_cls,
-                #                             prototype_img_filename_prefix + f'_{j}-original_segmentation_inputvar_{input_var[channel]}.png')) #to do change this to get the name of the variable
-                #     plt.close()
-                
+                # figure for predicted fire
                 fig, axs = plt.subplots(rows, cols, figsize=(16, 8))  # Customize the figure size as needed
 
                 for channel in range(len(input_var)):
-                    # Compute the row and column index for each subplot
                     row_idx = channel // cols
                     col_idx = channel % cols
 
-                    # Plot the original image on each subplot
+                    # Plot the original image and prediction on each subplot
                     axs[row_idx, col_idx].imshow(original_img_j[:, :, channel], cmap='gray')
                     axs[row_idx, col_idx].imshow(pred, alpha=0.7, cmap='Reds')  # Add prediction with transparency
                     axs[row_idx, col_idx].set_title(f"Channel {input_var[channel]}")
-                    axs[row_idx, col_idx].axis('off')  # Hide axes for a cleaner look
+                    axs[row_idx, col_idx].axis('off')
 
                 plt.tight_layout()
 
@@ -447,56 +394,27 @@ def update_prototypes_on_image(dataset: SeasFireLocalGlobalDataModule,
                                          prototype_self_act_filename_prefix + str(j) + '.npy'),
                             proto_act_img_j)
                 if prototype_img_filename_prefix is not None:
-                    # save the whole image containing the prototype as png
-
-                    # for channel in range(len(input_var)): # to do change this with the right format 
-                    #     plt.imsave(os.path.join(dir_for_saving_prototypes_cls,
-                    #                             prototype_img_filename_prefix + f'_{j}-original.png'),
-                    #             original_img_j[:,:,channel],
-                    #             vmin=0.0,
-                    #             vmax=1.0)
-                    #     plt.imshow(original_img_j[:,:,channel])
-                    #     plt.plot([rf_start_w_index, rf_start_w_index], [rf_start_h_index, rf_end_h_index],
-                    #             [rf_end_w_index, rf_end_w_index], [rf_start_h_index, rf_end_h_index],
-                    #             [rf_start_w_index, rf_end_w_index], [rf_start_h_index, rf_start_h_index],
-                    #             [rf_start_w_index, rf_end_w_index], [rf_end_h_index, rf_end_h_index],
-                    #             linewidth=2, color='red')
-                    #     plt.axis('off')
-                    #     plt.subplots_adjust(top=1, bottom=0, right=1, left=0,
-                    #                         hspace=0, wspace=0)
-                    #     #plt.margins(0, 0)
-                    #     plt.savefig(os.path.join(dir_for_saving_prototypes_cls,
-                    #                             prototype_img_filename_prefix + f'_{j}-original_with_box_inputvar_{input_var[channel]}.png'))
-                    #     plt.close()
-
+                    # save the img with prototype location
                     fig, axs = plt.subplots(rows, cols, figsize=(16, 8))  # Create subplots (2x4) and set figure size
 
                     for channel in range(len(input_var)):
-                        # Save the individual image for each channel
-                        plt.imsave(os.path.join(dir_for_saving_prototypes_cls,
-                                                prototype_img_filename_prefix + f'_{j}-original.png'),
-                                   original_img_j[:, :, channel],
-                                   vmin=0.0,
-                                   vmax=1.0)
 
-                        # Compute the row and column index for each subplot
                         row_idx = channel // cols
                         col_idx = channel % cols
 
-                        # Display the original image in the corresponding subplot
+                        #original image in the corresponding subplot
                         axs[row_idx, col_idx].imshow(original_img_j[:, :, channel], cmap='gray')
 
-                        # Plot the bounding box with red lines
+                        # bounding box with red lines
                         axs[row_idx, col_idx].plot([rf_start_w_index, rf_start_w_index], [rf_start_h_index, rf_end_h_index],
                                                    [rf_end_w_index, rf_end_w_index], [rf_start_h_index, rf_end_h_index],
                                                    [rf_start_w_index, rf_end_w_index], [rf_start_h_index, rf_start_h_index],
                                                    [rf_start_w_index, rf_end_w_index], [rf_end_h_index, rf_end_h_index],
                                                    linewidth=2, color='red')
+                        axs[row_idx, col_idx].set_title(f"Channel {input_var[channel]}")
+                        axs[row_idx, col_idx].axis('off')
                     
-                        axs[row_idx, col_idx].axis('off')  # Hide axes
-                    
-                    # Adjust layout to avoid overlapping subplots
-                    plt.subplots_adjust(top=1, bottom=0, right=1, left=0, hspace=0, wspace=0)
+                    plt.tight_layout()
                     
                     # Save the whole figure with all subplots
                     plt.savefig(os.path.join(dir_for_saving_prototypes_cls,
@@ -504,87 +422,24 @@ def update_prototypes_on_image(dataset: SeasFireLocalGlobalDataModule,
 
                     plt.close()
 
-                    # overlay (upsampled) self activation on original image and save the result
+
+                    # overlay (upsampled) self activation on original image and save the result                    # overlay (upsampled) self activation on original image and save the result
                     rescaled_act_img_j_gt = upsampled_act_img_j_gt - np.amin(upsampled_act_img_j_gt)
                     rescaled_act_img_j_gt = rescaled_act_img_j_gt / np.amax(rescaled_act_img_j_gt)
 
                     heatmap_gt = cv2.applyColorMap(np.uint8(255 * rescaled_act_img_j_gt), cv2.COLORMAP_JET)
                     heatmap_gt = np.float32(heatmap_gt) / 255
                     heatmap_gt = heatmap_gt[..., ::-1]
-                    heatmap_gt = np.mean(heatmap_gt, axis=2)
-
-                    # for channel in range(len(input_var)): # to do change this with the right format 
-
-                    #     overlayed_original_img_j_gt = 0.5 * original_img_j[:,:,channel] + 0.3 * heatmap_gt
-                    #     plt.imsave(os.path.join(dir_for_saving_prototypes_cls,
-                    #                             prototype_img_filename_prefix + f'_{j}-original_with_self_act_gt_only_inputvar_{input_var[channel]}.png'),
-                    #             overlayed_original_img_j_gt,
-                    #             vmin=0.0,
-                    #             vmax=1.0)
-                    for channel in range(len(input_var)):
-                        # Compute the row and column index for each subplot
-                        row_idx = channel // cols
-                        col_idx = channel % cols
-
-                        # Plot the grayscale image in the background
-                        axs[row_idx, col_idx].imshow(original_img_j[:, :, channel], cmap='gray', vmin=0.0, vmax=1.0)
-
-                        # Overlay the heatmap with a colormap (e.g., 'hot', 'jet', or 'Reds') and transparency
-                        axs[row_idx, col_idx].imshow(heatmap_gt, cmap='autumn', alpha=0.3)
-
-                        # Hide the axes for a cleaner look
-                        axs[row_idx, col_idx].axis('off')
-
-                    # Tight layout for better spacing between subplots
-                    plt.tight_layout()
-                    
-                    # Save the whole figure with all subplots
-                    plt.savefig(os.path.join(dir_for_saving_prototypes_cls,
-                                            prototype_img_filename_prefix + f'_{j}-original_with_self_act_gt_combined.png'))
-                    
-                    plt.close()
-
-                    # overlay (upsampled) self activation on original image and save the result
-                    rescaled_act_img_j = upsampled_act_img_j - np.amin(upsampled_act_img_j)
-                    rescaled_act_img_j = rescaled_act_img_j / np.amax(rescaled_act_img_j)
-
-                    heatmap = cv2.applyColorMap(np.uint8(255 * rescaled_act_img_j), cv2.COLORMAP_JET)
-                    heatmap = np.float32(heatmap) / 255
-                    heatmap = heatmap[..., ::-1]
-                    heatmap = np.mean(heatmap, axis=2)
-
-                        # overlayed_original_img_j = 0.5 * original_img_j[:,:,channel] + 0.3 * heatmap
-                        # plt.imsave(os.path.join(dir_for_saving_prototypes_cls,
-                        #                         prototype_img_filename_prefix + f'_{j}-original_with_self_act_inputvar_{input_var[channel]}.png'),
-                        #         overlayed_original_img_j,
-                        #         vmin=0.0,
-                        #         vmax=1.0)
-
-                        # #plt.figure(figsize=(img_width / DPI, img_height / DPI))
-                        # plt.imshow(overlayed_original_img_j)
-                        # plt.plot([rf_start_w_index, rf_start_w_index], [rf_start_h_index, rf_end_h_index],
-                        #         [rf_end_w_index, rf_end_w_index], [rf_start_h_index, rf_end_h_index],
-                        #         [rf_start_w_index, rf_end_w_index], [rf_start_h_index, rf_start_h_index],
-                        #         [rf_start_w_index, rf_end_w_index], [rf_end_h_index, rf_end_h_index],
-                        #         linewidth=2, color='red')
-                        # plt.axis('off')
-                        # plt.subplots_adjust(top=1, bottom=0, right=1, left=0,
-                        #                     hspace=0, wspace=0)
-                        # #plt.margins(0, 0)
-                        # plt.savefig(os.path.join(dir_for_saving_prototypes_cls,
-                        #                         prototype_img_filename_prefix + f'_{j}-original_with_self_act_and_box_inputvar_{input_var[channel]}.png'))
-                        # plt.close()
 
                     fig, axs = plt.subplots(rows, cols, figsize=(16, 8))  # Create subplots (2x4 grid)
 
                     for channel in range(len(input_var)):
-                        # Compute the row and column index for each subplot
                         row_idx = channel // cols
                         col_idx = channel % cols
-                    
+
                         # Create overlayed image (grayscale image + heatmap)
-                        axs[row_idx, col_idx].imshow(original_img_j[:, :, channel], cmap='gray', alpha = 0.5)
-                        axs[row_idx, col_idx].imshow(heatmap, cmap='autumn', alpha=0.4)
+                        axs[row_idx, col_idx].imshow(original_img_j[:, :, channel], cmap='gray',alpha=0.7)
+                        axs[row_idx, col_idx].imshow(heatmap_gt, alpha=0.3)
 
                         # Plot the bounding box with red lines
                         axs[row_idx, col_idx].plot([rf_start_w_index, rf_start_w_index], [rf_start_h_index, rf_end_h_index],
@@ -592,22 +447,49 @@ def update_prototypes_on_image(dataset: SeasFireLocalGlobalDataModule,
                                                     [rf_start_w_index, rf_end_w_index], [rf_start_h_index, rf_start_h_index],
                                                     [rf_start_w_index, rf_end_w_index], [rf_end_h_index, rf_end_h_index],
                                                     linewidth=2, color='red')
-
-                    
-                        # Hide the axes for a cleaner look
+                        axs[row_idx, col_idx].set_title(f"Channel {input_var[channel]}")
                         axs[row_idx, col_idx].axis('off')
                     
-                    # Adjust layout to ensure the subplots fit nicely
-                    plt.subplots_adjust(top=1, bottom=0, right=1, left=0, hspace=0, wspace=0)
-                    
-                    # Save the entire figure with all subplots
+                    plt.tight_layout()
+
                     plt.savefig(os.path.join(dir_for_saving_prototypes_cls,
-                                                prototype_img_filename_prefix + f'_{j}-original_with_self_act_and_boxes_combined.png'),
-                                bbox_inches='tight', pad_inches=0)
+                                                prototype_img_filename_prefix + f'_{j}-original_with_self_act_and_boxes_gt_only_combined.png'))
                     
                     plt.close()
                         
+                    # overlay (upsampled) self activation on original image and save the result                    # overlay (upsampled) self activation on original image and save the result
+                    rescaled_act_img_j = upsampled_act_img_j - np.amin(upsampled_act_img_j)
+                    rescaled_act_img_j = rescaled_act_img_j / np.amax(rescaled_act_img_j)
 
+                    heatmap = cv2.applyColorMap(np.uint8(255 * rescaled_act_img_j), cv2.COLORMAP_JET)
+                    heatmap = np.float32(heatmap) / 255
+                    heatmap = heatmap[..., ::-1]
+
+                    fig, axs = plt.subplots(rows, cols, figsize=(16, 8))  # Create subplots (2x4 grid)
+
+                    for channel in range(len(input_var)):
+                        row_idx = channel // cols
+                        col_idx = channel % cols
+
+                        # Create overlayed image (grayscale image + heatmap)
+                        axs[row_idx, col_idx].imshow(original_img_j[:, :, channel], cmap='gray',alpha=0.7)
+                        axs[row_idx, col_idx].imshow(heatmap, alpha=0.3)
+
+                        # Plot the bounding box with red lines
+                        axs[row_idx, col_idx].plot([rf_start_w_index, rf_start_w_index], [rf_start_h_index, rf_end_h_index],
+                                                    [rf_end_w_index, rf_end_w_index], [rf_start_h_index, rf_end_h_index],
+                                                    [rf_start_w_index, rf_end_w_index], [rf_start_h_index, rf_start_h_index],
+                                                    [rf_start_w_index, rf_end_w_index], [rf_end_h_index, rf_end_h_index],
+                                                    linewidth=2, color='red')
+                        axs[row_idx, col_idx].set_title(f"Channel {input_var[channel]}")
+                        axs[row_idx, col_idx].axis('off')
+                    
+                    plt.tight_layout()
+
+                    plt.savefig(os.path.join(dir_for_saving_prototypes_cls,
+                                                prototype_img_filename_prefix + f'_{j}-original_with_self_act_and_boxes_combined.png'))
+                    
+                    plt.close()
                     # if img_y.ndim > 2:
                     #     plt.imsave(os.path.join(dir_for_saving_prototypes_cls,
                     #                             prototype_img_filename_prefix + f'_{j}-receptive_field.png'),

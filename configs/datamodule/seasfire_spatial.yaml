@@ -17,4 +17,3 @@ patch_size: ${patch_size}
 num_workers: 4
 pin_memory: True
 debug: False
-push_prototypes: False

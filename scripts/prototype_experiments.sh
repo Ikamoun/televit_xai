@@ -7,7 +7,7 @@ export CUDA_VISIBLE_DEVICES=1
 
 max_epochs=2
 experiment="prototype"
-batch_size=16
+batch_size=32
 # Change debug to False if you want to run on the full dataset
 debug=True
 

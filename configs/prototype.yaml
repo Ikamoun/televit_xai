@@ -65,21 +65,21 @@ input_vars:
 #    'lccs_class_6',
 #    'lccs_class_7',
 #    'lccs_class_8',
-    'lst_day',
+    'lst_day', #land surface temperature
 #    'mslp',
     'ndvi',
     #'pop_dens',
-    'rel_hum',
+    'rel_hum',  #Relative Humidity
 #    'skt',
 #    'ssr',
-    'ssrd',
-    'sst',
+    'ssrd', #Surface Solar Radiation
+    'sst', # sea surface temperature
 #   'swvl1',
 #    't2m_max',
 #    't2m_mean',
-    't2m_min',
-    'tp',
-    'vpd',
+    't2m_min', #Temperature Minimum
+    'tp', # total precipitation
+    'vpd', #Vapour Pressure Deficit
 #    'ws10'
   ]
 
@@ -129,7 +129,7 @@ test: True
 ckpt_path: null
 
 # seed for random number generators in pytorch, numpy and python.random
-seed: 42
+seed: 20220227
 
 experiment_name: proto
 start_checkpoint: ''
@@ -137,8 +137,8 @@ early_stopping_patience_last_layer: 1000 #why
 warmup_step: 0
 finetune_steps: 10000
 joint_steps: 10000
-finetune_epochs: 5
-joint_epochs: 8
+finetune_epochs: 2 #5
+joint_epochs: 10
 warmup_batch_size: 2
 joint_batch_size: 2
 
@@ -149,16 +149,16 @@ training_phase: 1
 max_steps: 1000
 poly_lr_power: 0.9
 loss_weight_crs_ent: 1.0
-loss_weight_l1: 0.0001 # fine tunining ( 64*2)  augmenter ou plus long 
-loss_weight_kld: 0.25  #diversity loss
-joint_optimizer_lr_features: 0.005  # data specific ratio unet et prototype unet 0.001, common 0.0001
-joint_optimizer_lr_add_on_layers: 0.0001
-joint_optimizer_lr_prototype_vectors: 0.005 ## et ça
-joint_optimizer_weight_decay: 0.0005  # unet 0.000001 here 0.0005
+loss_weight_l1: 0.0001 # 0.0001 # fine tunining ( 64*2)  augmenter ou plus long 
+loss_weight_kld: 0.25  #diversity loss 0.25
+joint_optimizer_lr_features: 0.001  # data specific ratio unet et prototype unet 0.001, common 0.0001
+joint_optimizer_lr_add_on_layers: 0.001 #0.0001
+joint_optimizer_lr_prototype_vectors: 0.001 ## et ça
+joint_optimizer_weight_decay:  0.000001  # unet 0.000001 here 0.0005
 warm_optimizer_lr_add_on_layers: 0.0001
 warm_optimizer_lr_prototype_vectors: 0.0001
-warm_optimizer_weight_decay: 0.001
-last_layer_optimizer_lr: 0.0001
+warm_optimizer_weight_decay: 0.000001
+last_layer_optimizer_lr: 0.001 # 0.001
 ignore_void_class: False
 iter_size: 1
 _device : "cuda:0"

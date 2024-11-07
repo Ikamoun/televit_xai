@@ -8,9 +8,6 @@ from omegaconf import DictConfig
 import os
 import numpy as np
 
-#to see
-#from settings import log 
-
 from .seasfire_unet_module import unet_features
 from .components.receptive_field import compute_proto_layer_rf_info_v2
 
@@ -32,11 +29,13 @@ class PPNet(nn.Module):
                  prototype_activation_function='log',
                  add_on_layers_type='bottleneck',
                  bottleneck_stride: Optional[int] = None,
-                 patch_classification: bool = True):
+                 patch_classification: bool = True,
+                 norm_proto: bool =  False):
 
         super(PPNet, self).__init__()
 
         self.image_size = image_size
+        self.norm_proto = norm_proto
 
         self.epsilon = 1e-4
         self.bottleneck_stride = bottleneck_stride
@@ -45,7 +44,6 @@ class PPNet(nn.Module):
         self.input_vars = list(input_vars)
 
         self.prototype_vectors = nn.Parameter(torch.rand(tuple(prototype_shape)), requires_grad=True)
-
         # prototype_activation_function could be 'log', 'linear',
         # or a generic function that converts distance to similarity score
         self.prototype_activation_function = prototype_activation_function
@@ -61,14 +59,13 @@ class PPNet(nn.Module):
         num_prototypes_per_class = self.num_prototypes // self.num_classes
         for i in range(self.num_classes):
             self.prototype_class_identity[i * num_prototypes_per_class:(i + 1) * num_prototypes_per_class, i] = 1
+
         assert self.num_prototypes % self.num_classes == 0
 
         self.num_prototypes_per_class = num_prototypes_per_class
         self.proto_layer_rf_info = proto_layer_rf_info
-        # this has to be named features to allow the precise loading
-        #self.features = features
-        
-        self.features = base_architecture_to_features["unet"](self.input_vars, nb_classes = prototype_shape[1], pretrained=False)  #to do put it as global
+
+        self.features = base_architecture_to_features["unet"](self.input_vars, nb_classes = prototype_shape[1], pretrained=False)
         features = self.features
         
         # features_name = str(self.features).upper()
@@ -138,7 +135,6 @@ class PPNet(nn.Module):
                                  requires_grad=False)
         self.last_layer = nn.Linear(self.num_prototypes, self.num_classes,
                                     bias=False)  # do not use bias
-        print(self.last_layer)
         if init_weights:
             self._initialize_weights()
 
@@ -162,6 +158,7 @@ class PPNet(nn.Module):
         the feature input to prototype layer
         '''
         x = self.features(x)
+        #print(x[0])
         #[-1]
         #print(x.shape)
         # multi-scale training (MCS)
@@ -202,18 +199,29 @@ class PPNet(nn.Module):
         '''
         apply self.prototype_vectors as l2-convolution filters on input x
         '''
+        if self.norm_proto:
+            proto = F.normalize(self.prototype_vectors, p=2, dim=1) # [nb_proton, nb_features, 1, 1]
+            x = F.normalize(x, p=2, dim=1) # [nb_batches, nb_features, height, width]
+        else:
+            proto = self.prototype_vectors
+        print(self.prototype_vectors.shape)
         x2 = x ** 2
         x2_patch_sum = F.conv2d(input=x2, weight=self.ones)
-        p2 = self.prototype_vectors ** 2
+
+        p2 = proto ** 2
         p2 = torch.sum(p2, dim=(1, 2, 3))
+
         # p2 is a vector of shape (num_prototypes,)
         # then we reshape it to (num_prototypes, 1, 1)
         p2_reshape = p2.view(-1, 1, 1)
-        xp = F.conv2d(input=x, weight=self.prototype_vectors)
+        xp = F.conv2d(input=x, weight=proto)
+        # euclidian distance
+
         intermediate_result = - 2 * xp + p2_reshape  # use broadcast
-        # x2_patch_sum and intermediate_result are of the same shape
+        #distances = - xp
         distances = F.relu(x2_patch_sum + intermediate_result)
-        return distances
+        return distances  # [batch , nb_proto, img_size]
+
 
     def prototype_distances(self, x):
         '''
@@ -228,6 +236,8 @@ class PPNet(nn.Module):
             return torch.log((distances + 1) / (distances + self.epsilon))
         elif self.prototype_activation_function == 'linear':
             return -distances
+        elif self.prototype_activation_function == 'cosin':
+            return 1/(1-distances)
         else:
             return self.prototype_activation_function(distances)
 
@@ -265,14 +275,14 @@ class PPNet(nn.Module):
             dist_view = dist_view.reshape(-1, num_prototypes)
             prototype_activations = self.distance_2_similarity(dist_view)
             #print(prototype_activations[0,:])
-            logits = self.run_last_layer(prototype_activations)
-            #print(logits[0,:])
+            logits = self.run_last_layer(dist_view)
+            #print(prototype_activations)
+            #logits = torch.nn.functional.softmax(logits)
             # shape: (batch_size, n_patches_cols, n_patches_rows, num_classes)
             logits = logits.reshape(batch_size, n_patches_cols, n_patches_rows, -1)
-
+            #print(logits)
             if return_activations:
                 return logits, prototype_activations
-
             return logits, distances
         else:
             # original function from ProtoPNet
@@ -357,7 +367,6 @@ class PPNet(nn.Module):
 
         positive_one_weights_locations = torch.t(self.prototype_class_identity)
         negative_one_weights_locations = 1 - positive_one_weights_locations
-
         self.last_layer.weight.data.copy_(
             correct_class_connection * positive_one_weights_locations
             + incorrect_class_connection * negative_one_weights_locations)
@@ -387,17 +396,7 @@ def construct_PPNet(cfg: DictConfig):
     num_classes=cfg.num_classes
     prototype_activation_function=cfg.prototype_activation_function
     add_on_layers_type= cfg.add_on_layers_type
-    # features = base_architecture_to_features["unet"](input_vars,pretrained=pretrained )
-    # if hasattr(features, 'conv_info'):
-    #     layer_filter_sizes, layer_strides, layer_paddings = features.conv_info()
-    # else:
-    #     layer_filter_sizes, layer_strides, layer_paddings = [], [], []
 
-    # proto_layer_rf_info = compute_proto_layer_rf_info_v2(img_size=img_size,
-    #                                                      layer_filter_sizes=layer_filter_sizes,
-    #                                                      layer_strides=layer_strides,
-    #                                                      layer_paddings=layer_paddings,
-    #                                                      prototype_kernel_size=prototype_shape[2])
     proto_layer_rf_info = []
     return PPNet(input_vars= input_vars,
                  image_size=img_size,
@@ -407,26 +406,3 @@ def construct_PPNet(cfg: DictConfig):
                  init_weights=True,
                  prototype_activation_function=prototype_activation_function,
                  add_on_layers_type=add_on_layers_type)
-
-
-# void , 0 sur target no void for us done
-# sur la prediction il shift tout de 1 il ignore -1 adapter 
-
-# kld loss celle de hugo, inspiration
-# loss.py  pixel whise crosss entropy
-
-# divide len lié a scale multi scale,  mcs multiscale done
-# noter les choix
-
-# set layer 1 --1
-
-# model set last layer correctinon
-
-# code push _optimisation hugo
-
-# adaptive head see this
-# last layer
-# lightning module put steps 
-## see if there is or non in unet batch normalisation and how to deal with it
-
-# try with batch freeze

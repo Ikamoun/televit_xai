@@ -8,7 +8,6 @@ from omegaconf import DictConfig
 import hydra
 import time
 
-#import gin
 import torch
 import torch.nn.functional as F
 from pytorch_lightning import LightningModule
@@ -21,18 +20,14 @@ from .model import PPNet
 from .model import construct_PPNet
 import segmentation_models_pytorch as smp
 
-#from .components.segmentation.dataset import resize_label
-
-#from .components.settings import log
 
 from .train_and_test import warm_only, joint, last_only
 from torchmetrics import AUROC, AveragePrecision, F1Score, Precision, Recall
 import logging
 from src import utils
 
-#os.environ["CUDA_VISIBLE_DEVICES"] = "0" 
 
-logging.basicConfig(level=logging.WARNING)  # Change to INFO to see more logs
+logging.basicConfig(level=logging.WARNING)
 log = utils.get_pylogger(__name__)
 
 def get_lr(optimizer):
@@ -53,26 +48,19 @@ def reset_metrics() -> Dict:
         'recall': 0
     }
 
-# done defined a function bor bn freeze
+# done defined a function for bn freeze
 def freeze_bn_layers(model):
     for module in model.modules():
         if isinstance(module, torch.nn.BatchNorm2d):  # Change to nn.BatchNorm1d for 1D data
             for param in module.parameters():
                 param.requires_grad = False  # Freeze parameters
-            #module.eval()  
 
-count = [155134269, 5462083] 
-def weighted_cross_entropy(inputs, targets, class_counts = count ): #[325134269, 5462083]
-
+count = [155134269, 5462083]
+def weighted_cross_entropy(inputs, targets, class_counts = count ): # [325134269, 5462083]
     class_counts = torch.tensor(class_counts, dtype=torch.float32).to(inputs.device)
-
-    #total_samples = class_counts.sum()
-    #class_weights = total_samples / ( class_counts)
     class_weights = 1 /  class_counts
-
     weights = class_weights / class_weights.sum()
 
-    #weights = torch.tensor([0.02,0.98], dtype=torch.float32).to(inputs.device)
     criterion = torch.nn.CrossEntropyLoss(weight=weights)
     loss = criterion(inputs, targets)
     return loss
@@ -159,7 +147,7 @@ class PatchClassificationModule(LightningModule):
         if self.start_step is None:
             self.start_step = self.trainer.global_step
 
-        freeze_bn_layers(self.ppnet.features)
+        #freeze_bn_layers(self.ppnet.features)
 
         prototype_class_identity = self.ppnet.prototype_class_identity.cuda()
         metrics = self.metrics[split_key]
@@ -175,7 +163,6 @@ class PatchClassificationModule(LightningModule):
         #done added f1 aupcr
         mcs_loss, mcs_cross_entropy, mcs_kld_loss, mcs_cls_act_loss, mcs_auprc, mcs_f1, mcs_precision, mcs_recall = 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
         for output, patch_activations in mcs_model_outputs:
-            target = []
             #for sample_target in mcs_target:
             #    target.append(resize_label(sample_target, size=(output.shape[2], output.shape[1])).to(self.device))
             #target = torch.stack(torch.from_numpy(mcs_target), dim=0)
@@ -189,60 +176,28 @@ class PatchClassificationModule(LightningModule):
 
             patch_activations = patch_activations.permute(0, 2, 3, 1)
             patch_activations_img = patch_activations.reshape(patch_activations.shape[0], -1, patch_activations.shape[-1]) # (batch_size, img_size, num_proto)
-            # done took off this, no void for our case
 
-            # if self.ignore_void_class:
-            #     # do not predict label for void class (0)
-            #     print(target.shape)
-            #     time.sleep(5)
-            #     target_not_void = (target != 0).nonzero().squeeze()
-            #     target = target[target_not_void] - 1
-            #     output = output[target_not_void]
-
-            # if self.ignore_void_class:
-            # # Print target shape for debugging
-        
-            # # Create a boolean mask for elements that are not the "void class" (i.e., target != 0)
-            #     mask = target != 2
-            #     # Apply mask to `target` and `output` to filter out void class
-            #     target_not_void = target[mask]
-            #     #target_not_void = target_not_void  # Shift class labels by 1
-            
-            #     # Apply the same mask to `output` to get valid predictions
-            #     output_not_void = output[mask]
-            
-                # Now, `target_not_void` and `output_not_void` contain only the non-void classes
             target = torch.from_numpy(target)
             target = target.to(output.device)
 
-            # to do keep this or use pixel cross entropy, for initial model it is a typical cross entropy
-            # cross_entropy = torch.nn.functional.cross_entropy(
-            #     output,
-            #     target.long(),
-            #     weight = torch.tensor([1.01,60.5]).to(output.device))  # to do put a code for weight not just values 
+            #  cross entropy
+            cross_entropy = torch.nn.functional.cross_entropy(
+                output,
+                target.long())
 
-            cross_entropy = weighted_cross_entropy(output, target.long())
-            
+            #probability of fire 
             preds = torch.nn.functional.softmax(output)[:,1]
-
-            # Now, apply a threshold to classify pixels as class 1 if probability > 0.5z
-            class_1_pixels = (target > 0.5)
-            print("target")
-
-            # # Count the number of pixels classified as class 1
-            num_class_1_pixels = class_1_pixels.sum()
-            print(num_class_1_pixels)
+            y_pred = (preds > 0.5).int()
+            # # # Count the number of pixels classified as class 1
+            # num_class_1_pixels = class_1_pixels.sum()
+            # print(num_class_1_pixels)
 
             # preds = torch.nn.functional.softmax(output, dim=1)[:, 1]
             # # Now, apply a threshold to classify pixels as class 1 if probability > 0.5z
             print("pred")
             class_1_pixels = (preds > 0.5)
             num_class_1_pixels = class_1_pixels.sum()
-            # print("pred")
             print(num_class_1_pixels)
-
-            y_pred = (preds > 0.5).int()
-
 
             # Calculate precision and recall
             precision_mod = Precision(num_classes=1, average='micro', multiclass=False).to(output.device)
@@ -251,32 +206,15 @@ class PatchClassificationModule(LightningModule):
             precision = precision_mod(y_pred.flatten(), target.long().flatten())
             recall = recall_mod(y_pred.flatten(),  target.long().flatten())
 
-            # class_1_pixels = (target > 0.5)
-            # num_class_1_pixels = class_1_pixels.sum()
-            # print("target")
-            # print(num_class_1_pixels)
-            # cross_entropy  = smp.losses.DiceLoss(mode='multiclass')(
-            #     output,
-            #     target.long(),
-            # )
-
-            #done added this for aupcr and f1 evaluation, softmax based on the unet
-            
-            # Create metrics on the same device as preds
-            #predicted_labels = (output[:, 1]  >= 0.5).long()
-            # Calculate the metrics
+            # AUPRC and f1
             auprc = AveragePrecision(pos_label=1, num_classes=1, compute_on_cpu=True)
-            f1 = F1Score(num_classes=1, multiclass=False).to(output.device)
+            f1 = F1Score().to(output.device)
 
             auprc_value = auprc(preds.flatten(), target.long().flatten())
-            f1_value = f1(y_pred.flatten(), target.long().flatten())
+            f1_value = f1(preds.flatten(), target.long().flatten())
 
-            # calculate KLD over class pixels between prototypes from same class
-            class_counts =  count
-            class_counts = torch.tensor(class_counts, dtype=torch.float32).to(output.device)
-            class_weights = 1 /  class_counts
-        
-            weights = class_weights / class_weights.sum()
+            #calculate KLD over class pixels between prototypes from same class
+
             kld_loss = []
             for img_i in range(len(target_img)):
                 for cls_i in torch.unique(target_img[img_i]).cpu().detach().numpy():
@@ -305,20 +243,13 @@ class PatchClassificationModule(LightningModule):
                             log_p2_scores = log_cls_activations[j]
 
                             # add kld1 and kld2 to make 'symmetrical kld'
-                            weight = weights[cls_i]  
                             kld1 = torch.nn.functional.kl_div(log_p1_scores, log_p2_scores,
-                                                              log_target=True, reduction='none')
+                                                              log_target=True, reduction='sum')
                             kld2 = torch.nn.functional.kl_div(log_p2_scores, log_p1_scores,
-                                                              log_target=True, reduction='none')
+                                                              log_target=True, reduction='sum')
 
-                            kld1 = (weight * kld1).sum()
-                            kld2 = (weight * kld2).sum()
+
                             kld = (kld1 + kld2) / 2.0
-                            #kld_loss.append(kld)
-                            # Apply class weight
-                            
-                            #kld_weighted = weight * kld  
-
                             kld_loss.append(kld)
 
 
@@ -346,7 +277,6 @@ class PatchClassificationModule(LightningModule):
                     self.loss_weight_kld * kld_loss +
                     self.loss_weight_l1 * l1)
 
-
             mcs_loss += loss / len(mcs_model_outputs)
             mcs_cross_entropy += cross_entropy / len(mcs_model_outputs)
             mcs_auprc += auprc_value/ len(mcs_model_outputs)
@@ -356,9 +286,6 @@ class PatchClassificationModule(LightningModule):
             mcs_kld_loss += kld_loss / len(mcs_model_outputs)
             metrics['n_correct'] += torch.sum(is_correct)
             metrics['n_patches'] += output.shape[0]
-
-            # del output, patch_activations, target_img, auprc_value, f1_value
-            # torch.cuda.empty_cache() 
 
         self.batch_metrics['loss'].append(mcs_loss.item())
         self.batch_metrics['cross_entropy'].append(mcs_cross_entropy.item())
@@ -370,6 +297,7 @@ class PatchClassificationModule(LightningModule):
         self.iter_steps += 1
 
         if split_key == 'train':
+
             self.manual_backward(mcs_loss/ self.iter_size)
 
             if self.iter_steps == self.iter_size:
@@ -417,16 +345,11 @@ class PatchClassificationModule(LightningModule):
         for split_key in self.metrics.keys():
             self.metrics[split_key] = reset_metrics()
 
-        # Freeze the pre-trained batch norm
-        # done changed the freeze process
-        freeze_bn_layers(self.ppnet.features)
 
     def on_validation_epoch_end(self):
-        #val_acc = (self.metrics['val']['n_correct'] / self.metrics['val']['n_patches']).item()
         val_loss =  self.metrics['val']['cross_entropy']
 
         self.log('training_stage', float(self.training_phase))
-
         if self.training_phase == 0:
             stage_key = 'warmup'
         elif self.training_phase == 1:
@@ -480,8 +403,8 @@ class PatchClassificationModule(LightningModule):
         print()    
         return self._epoch_end('test')
 
-    def configure_optimizers(self):
-        if self.training_phase == 0:  # warmup
+    # def configure_optimizers(self):
+        # if self.training_phase == 0:  # warmup
             # aspp_params = [
             #     self.ppnet.features.base.aspp.c0.weight,
             #     self.ppnet.features.base.aspp.c0.bias,
@@ -492,47 +415,89 @@ class PatchClassificationModule(LightningModule):
             #     self.ppnet.features.base.aspp.c3.weight,
             #     self.ppnet.features.base.aspp.c3.bias
             # ]
-            optimizer_specs = \
-                [
-                    {
-                        'params': list(self.ppnet.add_on_layers.parameters()),
-                        # + aspp_params,
-                        'lr': self.warm_optimizer_lr_add_on_layers,
-                        'weight_decay': self.warm_optimizer_weight_decay
-                    },
-                    {
-                        'params': self.ppnet.prototype_vectors,
-                        'lr': self.warm_optimizer_lr_prototype_vectors
-                    }
-                ]
-        elif self.training_phase == 1:  # joint
-            optimizer_specs = \
-                [
-                    {
-                        "params": get_params(self.ppnet.features, key="1x"),  # augmenter learning rate selon model
-                        'lr': self.joint_optimizer_lr_features,
-                        'weight_decay': self.joint_optimizer_weight_decay
-                    },
-                    {
-                        "params": get_params(self.ppnet.features, key="10x"),
-                        'lr': 10 * self.joint_optimizer_lr_features,
-                        'weight_decay': self.joint_optimizer_weight_decay
-                    },
-                    {
-                        "params": get_params(self.ppnet.features, key="20x"),
-                        'lr': 10 * self.joint_optimizer_lr_features,
-                        'weight_decay': self.joint_optimizer_weight_decay
-                    },
-                    {
+        #     optimizer_specs = \
+        #         [
+        #             {
+        #                 'params': list(self.ppnet.add_on_layers.parameters()),
+        #                 # + aspp_params,
+        #                 'lr': self.warm_optimizer_lr_add_on_layers,
+        #                 'weight_decay': self.warm_optimizer_weight_decay
+        #             },
+        #             {
+        #                 'params': self.ppnet.prototype_vectors,
+        #                 'lr': self.warm_optimizer_lr_prototype_vectors
+        #             }
+        #         ]
+        # elif self.training_phase == 1:  # joint
+        #     optimizer_specs = \
+        #         [
+        #             {
+        #                 "params": get_params(self.ppnet.features, key="1x"),  # augmenter learning rate selon model
+        #                 'lr': self.joint_optimizer_lr_features,
+        #                 'weight_decay': self.joint_optimizer_weight_decay
+        #             },
+        #             {
+        #                 "params": get_params(self.ppnet.features, key="10x"),
+        #                 'lr': 10 * self.joint_optimizer_lr_features,
+        #                 'weight_decay': self.joint_optimizer_weight_decay
+        #             },
+        #             {
+        #                 "params": get_params(self.ppnet.features, key="20x"),
+        #                 'lr': 10 * self.joint_optimizer_lr_features,
+        #                 'weight_decay': self.joint_optimizer_weight_decay
+        #             },
+        #             {
+        #                 'params': self.ppnet.add_on_layers.parameters(), # sigmoid
+        #                 'lr': self.joint_optimizer_lr_add_on_layers,
+        #                 'weight_decay': self.joint_optimizer_weight_decay
+        #             },
+        #             {
+        #                 'params': self.ppnet.prototype_vectors,
+        #                 'lr': self.joint_optimizer_lr_prototype_vectors
+        #             }
+        #         ]
+        # else:  # last layer
+        #     optimizer_specs = [
+        #         {
+        #             'params': self.ppnet.last_layer.parameters(),
+        #             'lr': self.last_layer_optimizer_lr
+        #         }
+        #     ]
+
+        # optimizer = torch.optim.Adam(optimizer_specs)  # data specific
+
+        # if self.training_phase == 1:
+        #     self.lr_scheduler = PolynomialLR(
+        #         optimizer=optimizer,
+        #         step_size=1,
+        #         iter_max=self.max_steps // self.iter_size,
+        #         power=self.poly_lr_power
+        #     )
+
+        # return optimizer
+
+# optimze as in seasfire 
+
+    def configure_optimizers(self):
+        if self.training_phase == 1:  # joint
+            optimizer_specs  = [
+                {
+                    'params': self.ppnet.features.parameters(),
+                    'lr': self.joint_optimizer_lr_features,
+                    'weight_decay': self.joint_optimizer_weight_decay
+                },
+                
+                {
                         'params': self.ppnet.add_on_layers.parameters(), # sigmoid
                         'lr': self.joint_optimizer_lr_add_on_layers,
                         'weight_decay': self.joint_optimizer_weight_decay
                     },
-                    {
-                        'params': self.ppnet.prototype_vectors,
-                        'lr': self.joint_optimizer_lr_prototype_vectors
-                    }
-                ]
+
+                {
+                    'params': self.ppnet.prototype_vectors,
+                    'lr': self.joint_optimizer_lr_prototype_vectors
+                }
+            ]
         else:  # last layer
             optimizer_specs = [
                 {
@@ -541,14 +506,7 @@ class PatchClassificationModule(LightningModule):
                 }
             ]
 
-        optimizer = torch.optim.Adam(optimizer_specs)  # data specific
-
-        if self.training_phase == 1:
-            self.lr_scheduler = PolynomialLR(
-                optimizer=optimizer,
-                step_size=1,
-                iter_max=self.max_steps // self.iter_size,
-                power=self.poly_lr_power
-            )
-
+        optimizer = torch.optim.Adam(optimizer_specs)
+        lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer)
         return optimizer
+

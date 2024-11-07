@@ -82,13 +82,6 @@ def train(cfg: DictConfig) -> Tuple[dict, dict]:
 
     log.info(f"Instantiating trainer <{cfg.trainer._target_}>")
     trainer: Trainer = hydra.utils.instantiate(cfg.trainer, callbacks=callbacks, logger=logger)
-
-
-    # if cfg.get("train"):
-    #     log.info("Starting training!")
-    #     trainer.fit(model=model, datamodule=datamodule, ckpt_path=cfg.get("ckpt_path"))
-
-    # train_metrics = trainer.callback_metrics
     ppnet = construct_PPNet(cfg.model)
 
     log.info(f"Instantiating model <{cfg.model._target_}> for joint step")
@@ -122,16 +115,15 @@ def train(cfg: DictConfig) -> Tuple[dict, dict]:
 
     global_step = trainer.global_step if trainer is not None else 0
     current_epoch = trainer.current_epoch if trainer is not None else 0 
-
+    log.info(global_step)
+    log.info(current_epoch)
 
     cfg.trainer.max_steps = cfg.joint_steps
     cfg.trainer.max_epochs = cfg.joint_epochs
+    
     trainer = hydra.utils.instantiate(cfg.trainer, callbacks=callbacks, logger=logger)
     #trainer = Trainer(logger=logger, enable_progress_bar=True,
     #                min_steps=1, max_steps=cfg.joint_steps, val_check_interval=1,gpus=0) #to do change this
-
-    trainer.fit_loop.current_epoch = current_epoch + 1
-    trainer.fit_loop.global_step = global_step + 1
     trainer.fit(model=module, datamodule=datamodule)
 
     ckpt_path = trainer.checkpoint_callback.best_model_path
@@ -140,11 +132,17 @@ def train(cfg: DictConfig) -> Tuple[dict, dict]:
     print(ckpt_path)
 
     log.info('SAVING PROTOTYPES')
+    last_checkpoint = os.path.join(cfg.results_dir, 'checkpoints/nopush_last.pth')
+    if os.path.exists(last_checkpoint):
+        log.info(f'Loading model after joint training from {last_checkpoint}')
+        ppnet = torch.load(last_checkpoint)
+        ppnet = ppnet.cuda()
+
+
     ppnet = ppnet.cuda()
     module.eval()
     torch.set_grad_enabled(False)
 
-    cfg.datamodule.push_prototypes = True
     push_dataset: LightningDataModule = hydra.utils.instantiate(cfg.datamodule)
 
     # Call setup to initialize the datasets
@@ -166,7 +164,6 @@ def train(cfg: DictConfig) -> Tuple[dict, dict]:
 
     torch.save(obj=ppnet, f=os.path.join(cfg.results_dir, f'checkpoints/push_last.pth'))
     torch.save(obj=ppnet, f=os.path.join(cfg.results_dir, f'checkpoints/push_best.pth'))
-
     ppnet = torch.load(os.path.join(cfg.results_dir, f'checkpoints/push_last.pth'))
     ppnet = ppnet.cuda()
 
@@ -176,21 +173,20 @@ def train(cfg: DictConfig) -> Tuple[dict, dict]:
     #     EarlyStopping(monitor='val/accuracy', patience=early_stopping_patience_last_layer, mode='max')
     # ]
 
-    cfg.datamodule.push_prototypes = False
 
-    datamodule : LightningDataModule = hydra.utils.instantiate(cfg.datamodule)
     module = PatchClassificationModule( cfg,model_dir = cfg.results_dir, ppnet = ppnet, training_phase=2,max_steps=cfg.finetune_steps)
 
     #callbacks = [cb for cb in callbacks if not isinstance(cb, RichProgressBar)]
 
     current_epoch = trainer.current_epoch if trainer is not None else 0
+    global_step = trainer.global_step if trainer is not None else 0
 
     cfg.trainer.max_steps = cfg.finetune_steps + cfg.joint_steps  # Total steps with fine-tuning
     cfg.trainer.max_epochs = cfg.joint_epochs + cfg.finetune_epochs  # Total epochs including fine-tuning
-    #trainer = hydra.utils.instantiate(cfg.trainer, callbacks=callbacks, logger=logger)
+
     trainer = hydra.utils.instantiate(cfg.trainer, callbacks=callbacks, logger=logger) 
-    trainer.fit_loop.current_epoch = trainer.current_epoch
-    trainer.fit_loop.global_step = trainer.global_step + 1
+    trainer.fit_loop.current_epoch = current_epoch
+    trainer.fit_loop.global_step = global_step + 1
 
     trainer.fit(model=module, datamodule=datamodule)
 
@@ -200,18 +196,29 @@ def train(cfg: DictConfig) -> Tuple[dict, dict]:
     if cfg.get("test"):
         log.info("Starting testing!")
         ckpt_path = trainer.checkpoint_callback.best_model_path
-        if ckpt_path == "":
-            log.warning("Best ckpt not found! Using current weights for testing...")
+        log.info(f"Checkpoint path retrieved: {ckpt_path}")
+        
+        if not ckpt_path or ckpt_path == "":
+            log.warning("Best checkpoint not found! Using current weights for testing...")
             ckpt_path = None
-        trainer.test(model=module, datamodule=datamodule, ckpt_path=ckpt_path)
-        log.info(f"Best ckpt path: {ckpt_path}")
+        else:
+            log.info(f"Using best checkpoint at: {ckpt_path}")
+        
+        # Ensure that module and datamodule are not None
+        if module is None or datamodule is None:
+            log.error("Model or DataModule is not initialized properly.")
+        else:
+            trainer.test(model=module, datamodule=datamodule, ckpt_path=ckpt_path)
+        
+        log.info(f"Finished testing with best ckpt path: {ckpt_path}")
+
 
     test_metrics = trainer.callback_metrics
 
 
 
-    # merge train and test metrics
-    metric_dict = {**train_metrics, **test_metrics}
+    # # merge train and test metrics
+    metric_dict = {**train_metrics}
 
     return metric_dict, object_dict
 
@@ -220,15 +227,15 @@ def train(cfg: DictConfig) -> Tuple[dict, dict]:
 def main(cfg: DictConfig) -> Optional[float]:
 
     # train the model
-    metric_dict, _ = train(cfg)
+    train(cfg)
 
     # safely retrieve metric value for hydra-based hyperparameter optimization
-    metric_value = utils.get_metric_value(
-        metric_dict=metric_dict, metric_name=cfg.get("optimized_metric")
-    )
+    # metric_value = utils.get_metric_value(
+    #     metric_dict=metric_dict, metric_name=cfg.get("optimized_metric")
+    # )
 
-    # return optimized metric
-    return metric_value
+    # # return optimized metric
+    # return metric_value
 
 
 if __name__ == "__main__":
