@@ -204,7 +204,7 @@ class PPNet(nn.Module):
             x = F.normalize(x, p=2, dim=1) # [nb_batches, nb_features, height, width]
         else:
             proto = self.prototype_vectors
-        print(self.prototype_vectors.shape)
+
         x2 = x ** 2
         x2_patch_sum = F.conv2d(input=x2, weight=self.ones)
 
@@ -218,8 +218,8 @@ class PPNet(nn.Module):
         # euclidian distance
 
         intermediate_result = - 2 * xp + p2_reshape  # use broadcast
-        #distances = - xp
         distances = F.relu(x2_patch_sum + intermediate_result)
+
         return distances  # [batch , nb_proto, img_size]
 
 
@@ -236,8 +236,8 @@ class PPNet(nn.Module):
             return torch.log((distances + 1) / (distances + self.epsilon))
         elif self.prototype_activation_function == 'linear':
             return -distances
-        elif self.prototype_activation_function == 'cosin':
-            return 1/(1-distances)
+        elif self.prototype_activation_function == 'cos':
+            return (2 - distances)/2
         else:
             return self.prototype_activation_function(distances)
 
@@ -274,8 +274,9 @@ class PPNet(nn.Module):
             dist_view = distances.permute(0, 2, 3, 1).contiguous()
             dist_view = dist_view.reshape(-1, num_prototypes)
             prototype_activations = self.distance_2_similarity(dist_view)
-            #print(prototype_activations[0,:])
-            logits = self.run_last_layer(dist_view)
+
+            logits = self.run_last_layer(prototype_activations)
+
             #print(prototype_activations)
             #logits = torch.nn.functional.softmax(logits)
             # shape: (batch_size, n_patches_cols, n_patches_rows, num_classes)
@@ -396,6 +397,7 @@ def construct_PPNet(cfg: DictConfig):
     num_classes=cfg.num_classes
     prototype_activation_function=cfg.prototype_activation_function
     add_on_layers_type= cfg.add_on_layers_type
+    norm_proto= cfg.norm_proto
 
     proto_layer_rf_info = []
     return PPNet(input_vars= input_vars,
@@ -405,4 +407,5 @@ def construct_PPNet(cfg: DictConfig):
                  num_classes=num_classes,
                  init_weights=True,
                  prototype_activation_function=prototype_activation_function,
-                 add_on_layers_type=add_on_layers_type)
+                 add_on_layers_type=add_on_layers_type,
+                 norm_proto = norm_proto)

@@ -181,7 +181,7 @@ def update_prototypes_on_image(dataset: SeasFireLocalGlobalDataModule,
     del img_tensor
 
     logits, distances = ppnet.forward_from_conv_features(conv_features)
-    distances = - distances
+    #distances = - distances
     model_output_height = conv_features.shape[2]
     model_output_width = conv_features.shape[3]
 
@@ -241,7 +241,7 @@ def update_prototypes_on_image(dataset: SeasFireLocalGlobalDataModule,
     for j in range(n_prototypes):
         # target_class is the class of the class_specific prototype
         target_class = torch.argmax(ppnet.prototype_class_identity[j]).item() #imatrix 1 0 0 1 
-        target_class = 1 - target_class # to do so that the 10 first to fire 10 other non fire
+        #target_class = 1 - target_class # to do so that the 10 first to fire 10 other non fire
         # if there are no pixels of the target_class in this image
         # we go on to the next prototype
         if len(class_to_patch_index_dict[target_class]) == 0:
@@ -304,8 +304,10 @@ def update_prototypes_on_image(dataset: SeasFireLocalGlobalDataModule,
                 proto_act_img_j = np.log(
                     (proto_dist_img_j + 1) / (proto_dist_img_j + ppnet.epsilon))
             elif ppnet.prototype_activation_function == 'linear':
-                proto_act_img_j = proto_act_img_j = np.log(
+                proto_act_img_j = np.log(
                     (proto_dist_img_j + 1) / (proto_dist_img_j + ppnet.epsilon)) #max_dist - proto_dist_img_j
+            elif ppnet.prototype_activation_function == 'cos':
+                proto_act_img_j = (2-proto_dist_img_j)/2
             else:
                 proto_act_img_j = prototype_activation_function_in_numpy(proto_dist_img_j)
 
@@ -431,15 +433,15 @@ def update_prototypes_on_image(dataset: SeasFireLocalGlobalDataModule,
                     heatmap_gt = np.float32(heatmap_gt) / 255
                     heatmap_gt = heatmap_gt[..., ::-1]
 
-                    fig, axs = plt.subplots(rows, cols, figsize=(16, 8))  # Create subplots (2x4 grid)
+                    fig, axs = plt.subplots(rows , cols +1, figsize=(16, 8))  # Create subplots (2x4 grid)
 
                     for channel in range(len(input_var)):
                         row_idx = channel // cols
                         col_idx = channel % cols
 
                         # Create overlayed image (grayscale image + heatmap)
-                        axs[row_idx, col_idx].imshow(original_img_j[:, :, channel], cmap='gray',alpha=0.7)
-                        axs[row_idx, col_idx].imshow(heatmap_gt, alpha=0.3)
+                        axs[row_idx, col_idx].imshow(original_img_j[:, :, channel], cmap='gray')
+                        #axs[row_idx, col_idx].imshow(heatmap_gt, alpha=0.3)
 
                         # Plot the bounding box with red lines
                         axs[row_idx, col_idx].plot([rf_start_w_index, rf_start_w_index], [rf_start_h_index, rf_end_h_index],
@@ -449,7 +451,9 @@ def update_prototypes_on_image(dataset: SeasFireLocalGlobalDataModule,
                                                     linewidth=2, color='red')
                         axs[row_idx, col_idx].set_title(f"Channel {input_var[channel]}")
                         axs[row_idx, col_idx].axis('off')
-                    
+                    axs[0,-1].imshow(heatmap_gt)
+                    axs[0,-1].axis('off')
+                    axs[1,-1].axis('off')
                     plt.tight_layout()
 
                     plt.savefig(os.path.join(dir_for_saving_prototypes_cls,
@@ -465,15 +469,15 @@ def update_prototypes_on_image(dataset: SeasFireLocalGlobalDataModule,
                     heatmap = np.float32(heatmap) / 255
                     heatmap = heatmap[..., ::-1]
 
-                    fig, axs = plt.subplots(rows, cols, figsize=(16, 8))  # Create subplots (2x4 grid)
+                    fig, axs = plt.subplots(rows, cols+1, figsize=(16, 8))  # Create subplots (2x4 grid)
 
                     for channel in range(len(input_var)):
                         row_idx = channel // cols
                         col_idx = channel % cols
 
                         # Create overlayed image (grayscale image + heatmap)
-                        axs[row_idx, col_idx].imshow(original_img_j[:, :, channel], cmap='gray',alpha=0.7)
-                        axs[row_idx, col_idx].imshow(heatmap, alpha=0.3)
+                        axs[row_idx, col_idx].imshow(original_img_j[:, :, channel], cmap='gray')
+                        #axs[row_idx, col_idx].imshow(heatmap, alpha=0.3)
 
                         # Plot the bounding box with red lines
                         axs[row_idx, col_idx].plot([rf_start_w_index, rf_start_w_index], [rf_start_h_index, rf_end_h_index],
@@ -483,7 +487,9 @@ def update_prototypes_on_image(dataset: SeasFireLocalGlobalDataModule,
                                                     linewidth=2, color='red')
                         axs[row_idx, col_idx].set_title(f"Channel {input_var[channel]}")
                         axs[row_idx, col_idx].axis('off')
-                    
+                    axs[0,-1].imshow(heatmap)
+                    axs[0,-1].axis('off')
+                    axs[1,-1].axis('off')
                     plt.tight_layout()
 
                     plt.savefig(os.path.join(dir_for_saving_prototypes_cls,

@@ -12,9 +12,10 @@ num_classes: 2
 #features : ${hydra:call:src.models.seasfire_unet_module.unet_features}
 proto_layer_rf_info : []
 #pretrained: true
-prototype_activation_function: "linear"  # "linear" "log"
+prototype_activation_function: "cos"  # "linear" "log"
 add_on_layers_type: 'deeplab_simple'
 bottleneck_stride: null
 patch_classification: True
+norm_proto: True
 
 

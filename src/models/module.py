@@ -42,7 +42,7 @@ def reset_metrics() -> Dict:
         'cross_entropy': 0,
         'kld_loss': 0,
         'loss': 0,
-        'f1': 0,  #done added these parameters
+        'f1': 0,
         'auprc': 0,
         'precision': 0,
         'recall': 0
@@ -184,6 +184,10 @@ class PatchClassificationModule(LightningModule):
             cross_entropy = torch.nn.functional.cross_entropy(
                 output,
                 target.long())
+            #  Dice loss
+            dice_loss =smp.losses.DiceLoss(mode='multiclass')(
+                output,
+                target.long())
 
             #probability of fire 
             preds = torch.nn.functional.softmax(output)[:,1]
@@ -207,10 +211,12 @@ class PatchClassificationModule(LightningModule):
             recall = recall_mod(y_pred.flatten(),  target.long().flatten())
 
             # AUPRC and f1
-            auprc = AveragePrecision(pos_label=1, num_classes=1, compute_on_cpu=True)
+            preds = torch.nn.functional.softmax(output)[:,1]
+            auprc = AveragePrecision(pos_label=1, compute_on_cpu=True)
             f1 = F1Score().to(output.device)
-
+            
             auprc_value = auprc(preds.flatten(), target.long().flatten())
+            print(preds.flatten().max())
             f1_value = f1(preds.flatten(), target.long().flatten())
 
             #calculate KLD over class pixels between prototypes from same class
@@ -221,7 +227,6 @@ class PatchClassificationModule(LightningModule):
                     cls_i = int(cls_i)
                     if cls_i < 0 or cls_i >= self.ppnet.prototype_class_identity.shape[1]:
                         continue
-
                     cls_protos = torch.nonzero(self.ppnet.prototype_class_identity[:, cls_i]). \
                         flatten().cpu().detach().numpy()
 
@@ -229,7 +234,6 @@ class PatchClassificationModule(LightningModule):
                         continue
 
                     cls_mask = (target_img[img_i] == cls_i)
-
                     log_cls_activations = [torch.masked_select(patch_activations_img[img_i, :, i], cls_mask)
                                            for i in cls_protos]
                     log_cls_activations = [torch.nn.functional.log_softmax(act, dim=0) for act in log_cls_activations]
@@ -273,9 +277,9 @@ class PatchClassificationModule(LightningModule):
 
             l1 = (self.ppnet.last_layer.weight * l1_mask).norm(p=1)
 
-            loss = (self.loss_weight_crs_ent * cross_entropy +
-                    self.loss_weight_kld * kld_loss +
-                    self.loss_weight_l1 * l1)
+            loss = (self.loss_weight_crs_ent * cross_entropy)
+            #         self.loss_weight_kld * kld_loss +
+            #         self.loss_weight_l1 * l1)
 
             mcs_loss += loss / len(mcs_model_outputs)
             mcs_cross_entropy += cross_entropy / len(mcs_model_outputs)
@@ -376,6 +380,7 @@ class PatchClassificationModule(LightningModule):
             metrics['n_batches'] += 1
 
         n_batches = metrics['n_batches']
+        print(n_batches)
 
         self.batch_metrics = defaultdict(list)
 
