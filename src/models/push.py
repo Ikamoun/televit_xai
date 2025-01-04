@@ -120,12 +120,14 @@ def push_prototypes(dataset: SeasFireLocalGlobalDataModule,
                                        prototype_activation_function_in_numpy=prototype_activation_function_in_numpy,
                                        input_var=input_var)
 
+
     if proto_epoch_dir != None and proto_bound_boxes_filename_prefix != None:
         np.save(os.path.join(proto_epoch_dir,
                              proto_bound_boxes_filename_prefix + '-receptive_field' + str(epoch_number) + '.npy'),
                 proto_rf_boxes)
         np.save(os.path.join(proto_epoch_dir, proto_bound_boxes_filename_prefix + str(epoch_number) + '.npy'),
                 proto_bound_boxes)
+
 
     log.info('\tExecuting push ...')
     prototype_update = np.reshape(global_min_fmap_patches,
@@ -181,7 +183,7 @@ def update_prototypes_on_image(dataset: SeasFireLocalGlobalDataModule,
     del img_tensor
 
     logits, distances = ppnet.forward_from_conv_features(conv_features)
-    #distances = - distances
+ 
     model_output_height = conv_features.shape[2]
     model_output_width = conv_features.shape[3]
 
@@ -213,10 +215,7 @@ def update_prototypes_on_image(dataset: SeasFireLocalGlobalDataModule,
 
             #if pixel_cls > 0: #done  took off this as i have no void so 0 is no fire 1 is fire and no -1
             class_to_patch_index_dict[pixel_cls].add((patch_i, patch_j))
-    # proto 6 71 16 0.22671318 [563, 572, 127, 136]
-    # rf_start_h_index = int(patch_i * patch_height)
-    # patch_i rf_start_index/patch_height
-    # rf_end_h_index = int(patch_i * patch_height + patch_height) + 1
+
 
     class_to_patch_index_dict = {k: list(v) for k, v in class_to_patch_index_dict.items()}
 
@@ -240,8 +239,8 @@ def update_prototypes_on_image(dataset: SeasFireLocalGlobalDataModule,
 
     for j in range(n_prototypes):
         # target_class is the class of the class_specific prototype
-        target_class = torch.argmax(ppnet.prototype_class_identity[j]).item() #imatrix 1 0 0 1 
-        #target_class = 1 - target_class # to do so that the 10 first to fire 10 other non fire
+        target_class = torch.argmax(ppnet.prototype_class_identity[j]).item()
+
         # if there are no pixels of the target_class in this image
         # we go on to the next prototype
         if len(class_to_patch_index_dict[target_class]) == 0:
@@ -269,11 +268,6 @@ def update_prototypes_on_image(dataset: SeasFireLocalGlobalDataModule,
             global_min_proto_dist[j] = batch_min_proto_dist
             global_min_fmap_patches[j] = batch_min_fmap_patch_j
 
-            # get the receptive field boundary of the image patch
-            # that generates the representation
-            # protoL_rf_info = ppnet.proto_layer_rf_info
-            # rf_prototype_j = compute_rf_prototype((search_batch.shape[2], search_batch.shape[3]),
-            # batch_argmin_proto_dist, protoL_rf_info)
 
             rf_start_h_index = int(patch_i * patch_height)
             rf_end_h_index = int(patch_i * patch_height + patch_height) + 1
@@ -440,7 +434,7 @@ def update_prototypes_on_image(dataset: SeasFireLocalGlobalDataModule,
                         col_idx = channel % cols
 
                         # Create overlayed image (grayscale image + heatmap)
-                        axs[row_idx, col_idx].imshow(original_img_j[:, :, channel], cmap='gray')
+                        axs[row_idx, col_idx].imshow(original_img_j[:, :, channel], cmap='viridis')
                         #axs[row_idx, col_idx].imshow(heatmap_gt, alpha=0.3)
 
                         # Plot the bounding box with red lines
@@ -476,7 +470,7 @@ def update_prototypes_on_image(dataset: SeasFireLocalGlobalDataModule,
                         col_idx = channel % cols
 
                         # Create overlayed image (grayscale image + heatmap)
-                        axs[row_idx, col_idx].imshow(original_img_j[:, :, channel], cmap='gray')
+                        axs[row_idx, col_idx].imshow(original_img_j[:, :, channel], cmap='viridis')
                         #axs[row_idx, col_idx].imshow(heatmap, alpha=0.3)
 
                         # Plot the bounding box with red lines
@@ -496,33 +490,9 @@ def update_prototypes_on_image(dataset: SeasFireLocalGlobalDataModule,
                                                 prototype_img_filename_prefix + f'_{j}-original_with_self_act_and_boxes_combined.png'))
                     
                     plt.close()
-                    # if img_y.ndim > 2:
-                    #     plt.imsave(os.path.join(dir_for_saving_prototypes_cls,
-                    #                             prototype_img_filename_prefix + f'_{j}-receptive_field.png'),
-                    #                rf_img_j,
-                    #                vmin=0.0,
-                    #                vmax=1.0)
-                    #     overlayed_rf_img_j = overlayed_original_img_j[rf_prototype_j[1]:rf_prototype_j[2],
-                    #                          rf_prototype_j[3]:rf_prototype_j[4]]
-                    #     plt.imsave(os.path.join(dir_for_saving_prototypes_cls,
-                    #                             prototype_img_filename_prefix
-                    #                             + f'_{j}-receptive_field_with_self_act.png'),
-                    #                overlayed_rf_img_j,
-                    #                vmin=0.0,
-                    #                vmax=1.0)
 
-                    # # save the prototype image (highly activated region of the whole image)
-                    # plt.imsave(os.path.join(dir_for_saving_prototypes_cls,
-                    #                         prototype_img_filename_prefix + f'_{j}_inputvar_{input_var[channel]}.png'),
-                    #            proto_img_j[:,:,channel],
-                    #            vmin=0.0,
-                    #            vmax=1.0)
-
-                    # # save the prototype image (highly activated region of the whole image)
-                    # plt.imsave(os.path.join(dir_for_saving_prototypes_cls,
-                    #                         prototype_img_filename_prefix + f'_{j}_gt_inputvar_{input_var[channel]}.png'),
-                    #            proto_img_j_gt[:,:,channel],
-                    #            vmin=0.0,
-                    #            vmax=1.0)
 
     del class_to_patch_index_dict
+
+
+

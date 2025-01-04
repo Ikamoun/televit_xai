@@ -25,17 +25,18 @@ class plUNET(pl.LightningModule):
         print(nb_classes)
         self.save_hyperparameters(logger=False)
         self.net = smp.UnetPlusPlus(encoder_name=encoder, in_channels=len(input_vars) , classes=nb_classes)
-        print(self.net)
+
         if loss == 'dice':
             self.criterion = smp.losses.DiceLoss(mode='multiclass')
         elif loss == 'ce':
             self.criterion = torch.nn.CrossEntropyLoss()
 
-        self.train_f1 = F1Score(compute_on_cpu=True)
-        self.train_auprc = AveragePrecision(pos_label=1, num_classes=nb_classes-1, compute_on_cpu=True)
+        #self.train_f1 = F1Score(compute_on_cpu=True)
+        #self.train_auprc = AveragePrecision(pos_label=1, num_classes=nb_classes-1, compute_on_cpu=True)
         #self.val_auc = AUROC(pos_label=1, num_classes=nb_classes, compute_on_cpu=True)
         self.val_f1 = F1Score(compute_on_cpu=True)
         self.val_auprc = AveragePrecision(pos_label=1, num_classes=nb_classes-1, compute_on_cpu=True)
+        
         #self.test_auc = AUROC(pos_label=1, num_classes=nb_classes, compute_on_cpu=True)
         self.test_auprc = AveragePrecision(pos_label=1, num_classes=nb_classes-1, compute_on_cpu=True)
         self.test_f1 = F1Score()
@@ -50,33 +51,69 @@ class plUNET(pl.LightningModule):
         x = x.float()
         y = y.long()
 
+        # conv_layer = self.net.segmentation_head[0]
+
+        # if isinstance(conv_layer, torch.nn.Conv2d):
+        # # Print the weights
+        #     print("Weights of the Conv2d layer:")
+        #     print(conv_layer.weight.data)
+        
+        # # Print the bias term, if it exists
+        # if conv_layer.bias is not None:
+        #     print("\nBias of the Conv2d layer:")
+        #     print(conv_layer.bias.data)
+
+        # current_lr = self.trainer.optimizers[0].param_groups[0]['lr']
+        # print(f"Current learning rate: {current_lr}")        
+
+        # conv_layer = self.net.decoder.blocks.x_0_4.conv2[0]
+
+        # if isinstance(conv_layer, torch.nn.Conv2d):
+        # Print the weights
+        #     print("Weights of the Conv2d layer:")
+        #     print(conv_layer.weight.data)
+        
+        # # Print the bias term, if it exists
+        # if conv_layer.bias is not None:
+        #     print("\nBias of the Conv2d layer:")
+        #     print(conv_layer.bias.data)
+
+
+
+        
         logits = self.forward(x)
+
         loss = self.criterion(logits, y)
+
         preds = torch.nn.functional.softmax(logits, dim=1)[:, 1]
         return loss, preds, y, x
 
     def training_step(self, batch: Any, batch_idx: int):
         loss, preds, targets, inputs = self.step(batch)
-        self.train_auprc.update(preds.flatten(), targets.flatten())
-        self.train_f1.update(preds.flatten(), targets.flatten())
+        # self.train_auprc.update(preds.flatten(), targets.flatten())
+        # self.train_f1.update(preds.flatten(), targets.flatten())
         self.log("train/loss", loss, on_step=False, on_epoch=True, prog_bar=True)
 
         return {"loss": loss}
 
     def training_epoch_end(self, outputs: List[Any]):
         # Compute and log averaged metrics over the entire epoch
-        self.log("train/auprc", self.train_auprc.compute(), prog_bar=False)
-        self.log("train/f1", self.train_f1.compute(), prog_bar=False)
+        # self.log("train/auprc", self.train_auprc.compute(), prog_bar=False)
+        # self.log("train/f1", self.train_f1.compute(), prog_bar=False)
         
-        # Reset metrics for the next epoch
-        self.train_auprc.reset()
-        self.train_f1.reset()
+        # # Reset metrics for the next epoch
+        # self.train_auprc.reset()
+        # self.train_f1.reset()
+        pass
 
     def validation_step(self, batch: Any, batch_idx: int):
         loss, preds, targets, inputs = self.step(batch)
         # log val metrics
 
         #self.val_auc.update(preds, targets)
+        auprc = AveragePrecision(pos_label=1, num_classes=1, compute_on_cpu=True)
+        print(auprc(preds.flatten(), targets.flatten()))
+
         self.val_auprc.update(preds.flatten(), targets.flatten())
         self.val_f1.update(preds.flatten(), targets.flatten())
         self.log("val/loss", loss, on_step=False, on_epoch=True, prog_bar=True)
@@ -129,5 +166,6 @@ def unet_features(input_vars, nb_classes,  pretrained=False):
         model.load_state_dict(checkpoint, strict=False)
 
     # Remove the final layer for feature extraction
-    model.final_conv = nn.Identity()  # Replace final layer with identity to remove it
+
+    #model.segmentation_head = nn.Identity()  # Replace final layer with identity to remove it
     return model

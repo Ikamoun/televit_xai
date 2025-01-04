@@ -60,22 +60,22 @@ class LogValPredictionsSegmentation(Callback):
         """Start executing this callback only after all validation sanity checks end."""
         self.ready = True
 
-    def on_validation_batch_end(
-            self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx
-    ):
-        """Gather data from single batch."""
-        if self.ready and len(self.preds) < self.num_samples:
-            self.preds.append(outputs["preds"])
-            self.targets.append(outputs["targets"])
-            self.inputs.append(outputs["inputs"])
+    # def on_validation_batch_end(
+    #         self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx
+    # ):
+    #     """Gather data from single batch."""
+    #     if self.ready and len(self.preds) < self.num_samples:
+    #         self.preds.append(outputs["preds"])
+    #         self.targets.append(outputs["targets"])
+    #         self.inputs.append(outputs["inputs"])
 
-    def on_validation_epoch_end(self, trainer, pl_module):
-        if self.ready and (trainer.current_epoch + 1) % self.every_n_epochs == 0:
-            logger = get_wandb_logger(trainer=trainer)
-            experiment = logger.experiment
-            preds = torch.cat(self.preds[:self.num_samples])
-            targets = torch.cat(self.targets[:self.num_samples])
-            inputs = torch.cat(self.inputs[:self.num_samples])
+    # def on_validation_epoch_end(self, trainer, pl_module):
+    #     if self.ready and (trainer.current_epoch + 1) % self.every_n_epochs == 0:
+    #         logger = get_wandb_logger(trainer=trainer)
+    #         experiment = logger.experiment
+    #         preds = torch.cat(self.preds[:self.num_samples])
+    #         targets = torch.cat(self.targets[:self.num_samples])
+    #         inputs = torch.cat(self.inputs[:self.num_samples])
 
             # imgs = []
             # input_vars = pl_module.hparams.input_vars
@@ -111,12 +111,12 @@ class LogValPredictionsSegmentation(Callback):
             # )
 
             # clear the lists
-            self.preds = []
-            self.targets = []
-            self.inputs = []
-            self.preds.clear()
-            self.targets.clear()
-            self.inputs.clear()
+            # self.preds = []
+            # self.targets = []
+            # self.inputs = []
+            # self.preds.clear()
+            # self.targets.clear()
+            # self.inputs.clear()
 
 
 class AddMetricAggs(Callback):

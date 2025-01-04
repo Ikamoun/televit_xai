@@ -44,6 +44,8 @@ class PPNet(nn.Module):
         self.input_vars = list(input_vars)
 
         self.prototype_vectors = nn.Parameter(torch.rand(tuple(prototype_shape)), requires_grad=True)
+        self.bias = nn.Parameter(torch.randn(2), requires_grad=True)
+
         # prototype_activation_function could be 'log', 'linear',
         # or a generic function that converts distance to similarity score
         self.prototype_activation_function = prototype_activation_function
@@ -67,7 +69,6 @@ class PPNet(nn.Module):
 
         self.features = base_architecture_to_features["unet"](self.input_vars, nb_classes = prototype_shape[1], pretrained=False)
         features = self.features
-        
         # features_name = str(self.features).upper()
         # if features_name.startswith('VGG') or features_name.startswith('RES'):
         #     first_add_on_layer_in_channels = \
@@ -158,15 +159,18 @@ class PPNet(nn.Module):
         the feature input to prototype layer
         '''
         x = self.features(x)
+
+        # we took off the sigmoid 
+
         #print(x[0])
         #[-1]
         #print(x.shape)
         # multi-scale training (MCS)
-        if isinstance(x, list):
-            return [self.add_on_layers(x_scaled) for x_scaled in x]
+        # if isinstance(x, list):
+        #     return [self.add_on_layers(x_scaled) for x_scaled in x]
 
-        #print("ADD ON LAYERS")
-        x = self.add_on_layers(x)
+        # #print("ADD ON LAYERS")
+        # x = self.add_on_layers(x)
         #print(x.shape)
         return x
 
@@ -200,7 +204,7 @@ class PPNet(nn.Module):
         apply self.prototype_vectors as l2-convolution filters on input x
         '''
         if self.norm_proto:
-            proto = F.normalize(self.prototype_vectors, p=2, dim=1) # [nb_proton, nb_features, 1, 1]
+            proto = F.normalize(self.prototype_vectors, p=2, dim=1) # [nb_proton, nb_features, 1, 1]  eps=1e-12
             x = F.normalize(x, p=2, dim=1) # [nb_batches, nb_features, height, width]
         else:
             proto = self.prototype_vectors
@@ -214,11 +218,13 @@ class PPNet(nn.Module):
         # p2 is a vector of shape (num_prototypes,)
         # then we reshape it to (num_prototypes, 1, 1)
         p2_reshape = p2.view(-1, 1, 1)
-        xp = F.conv2d(input=x, weight=proto)
-        # euclidian distance
 
+        #xp = F.conv2d(input=x, weight=proto,stride=(1, 1), padding=(1, 1)) + self.bias.view(1, -1, 1, 1) 
+        # # euclidian distance
+        xp = F.conv2d(input=x, weight=proto)
         intermediate_result = - 2 * xp + p2_reshape  # use broadcast
         distances = F.relu(x2_patch_sum + intermediate_result)
+ 
 
         return distances  # [batch , nb_proto, img_size]
 
@@ -242,7 +248,7 @@ class PPNet(nn.Module):
             return self.prototype_activation_function(distances)
 
     def forward(self, x, **kwargs):
-        conv_features = self.conv_features(x)
+        conv_features = self.conv_features(x) # get the output if the unet
         # MCS
         if isinstance(conv_features, list):
             return [self.forward_from_conv_features(c, **kwargs) for c in conv_features]
@@ -277,11 +283,9 @@ class PPNet(nn.Module):
 
             logits = self.run_last_layer(prototype_activations)
 
-            #print(prototype_activations)
-            #logits = torch.nn.functional.softmax(logits)
             # shape: (batch_size, n_patches_cols, n_patches_rows, num_classes)
             logits = logits.reshape(batch_size, n_patches_cols, n_patches_rows, -1)
-            #print(logits)
+
             if return_activations:
                 return logits, prototype_activations
             return logits, distances
@@ -353,7 +357,7 @@ class PPNet(nn.Module):
         )
 
         return rep.format(self.features,
-                          self.img_size,
+                          self.image_size,
                           self.prototype_shape,
                           self.proto_layer_rf_info,
                           self.num_classes,
