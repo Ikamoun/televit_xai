@@ -97,6 +97,9 @@ class PatchClassificationModule(LightningModule):
         self.max_steps = max_steps
         self.poly_lr_power = cfg.poly_lr_power
         self.loss_weight_crs_ent = cfg.loss_weight_crs_ent
+        self.loss_weight_ent = cfg.loss_weight_ent
+        self.loss_weight_ortho = cfg.loss_weight_ortho
+        self.loss_weight_cluster = cfg.loss_weight_cluster
         self.loss_weight_l1 = cfg.loss_weight_l1
         self.loss_weight_kld = cfg.loss_weight_kld
         self.loss_weight_proto = cfg.loss_weight_proto
@@ -240,8 +243,8 @@ class PatchClassificationModule(LightningModule):
                 proto_loss = torch.tensor(0)
 
             #calculate entropy
-            cluster_loss_fire = []
-            cluster_loss_nonfire = []
+            entro_loss_fire = []
+            entro_loss_nonfire = []
 
             for img_i in range(len(target_img)):
                 for cls_i in torch.unique(target_img[img_i]): 
@@ -262,7 +265,7 @@ class PatchClassificationModule(LightningModule):
                             for proto_idx in cls_protos
                         ]
 
-                        cluster_loss_nonfire.append(torch.stack(cls_activations))
+                        entro_loss_nonfire.append(torch.stack(cls_activations))
 
                     else: 
                         cls_protos = torch.nonzero(self.ppnet.prototype_class_identity[:, cls_i]).flatten()
@@ -277,15 +280,15 @@ class PatchClassificationModule(LightningModule):
                             for proto_idx in cls_protos
                         ]
 
-                        cluster_loss_fire.append(torch.stack(cls_activations)) #10
+                        entro_loss_fire.append(torch.stack(cls_activations)) #10
 
-            cluster_loss_fire = torch.stack(cluster_loss_fire)
-            cluster_loss_nonfire = torch.stack(cluster_loss_nonfire)
+            entro_loss_fire = torch.stack(entro_loss_fire)
+            entro_loss_nonfire = torch.stack(entro_loss_nonfire)
         
 
             # Calculate the mean of activations for each prototype across all images in the batch
-            mean_loss_fire = cluster_loss_fire.mean(dim=0)  # Shape (num_prototypes_in_class,)
-            mean_loss_nonfire = cluster_loss_nonfire.mean(dim=0)
+            mean_loss_fire = entro_loss_fire.mean(dim=0)  # Shape (num_prototypes_in_class,)
+            mean_loss_nonfire = entro_loss_nonfire.mean(dim=0)
 
             p_fire = torch.nn.functional.softmax(mean_loss_fire, dim=0)
             p_nonfire = torch.nn.functional.softmax(mean_loss_nonfire, dim=0)
@@ -300,8 +303,6 @@ class PatchClassificationModule(LightningModule):
 
 
             entropy_loss = - ((entropy_fire + entropy_nonfire)/2)
-            print(entropy_loss)
-
 
             # compute the cluster loss
 
@@ -423,8 +424,9 @@ class PatchClassificationModule(LightningModule):
 
             l1 = (self.ppnet.last_layer.weight * l1_mask).norm(p=1)
 
-            loss = (2*self.loss_weight_crs_ent * cross_entropy +
-                   0.02*entropy_loss +  0.01*cluster_loss + 0.001*proto_loss)  
+            loss = (self.loss_weight_crs_ent * cross_entropy +
+                    self.loss_weight_ent*entropy_loss + self.loss_weight_cluster*cluster_loss + self.loss_weight_ortho*proto_loss
+                   + self.loss_weight_l1 * l1)  
 
             mcs_loss += loss / len(mcs_model_outputs)
             mcs_cross_entropy += cross_entropy / len(mcs_model_outputs)

@@ -170,8 +170,11 @@ def joint(model):
         model = model.module
     for p in model.features.parameters():
         p.requires_grad = True
-    for p in model.add_on_layers.parameters():
-        p.requires_grad = True
+    # for p in model.add_on_layers.parameters():
+    #     p.requires_grad = False
     model.prototype_vectors.requires_grad = True
     for p in model.last_layer.parameters():
-        p.requires_grad = True
+        p.requires_grad = False
+
+
+

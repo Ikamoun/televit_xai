@@ -83,7 +83,6 @@ def train(cfg: DictConfig) -> Tuple[dict, dict]:
     log.info(f"Instantiating trainer <{cfg.trainer._target_}>")
     trainer: Trainer = hydra.utils.instantiate(cfg.trainer, callbacks=callbacks, logger=logger)
     ppnet = construct_PPNet(cfg.model)
-
     log.info(f"Instantiating model <{cfg.model._target_}> for joint step")
     # Instantiate the PatchClassificationModule using Hydra's config
     module: LightningModule = PatchClassificationModule(cfg, model_dir = cfg.results_dir, ppnet = ppnet, training_phase=1,max_steps=cfg.joint_steps)
@@ -101,17 +100,6 @@ def train(cfg: DictConfig) -> Tuple[dict, dict]:
         log.info("Logging hyperparameters!")
         utils.log_hyperparameters(object_dict)
 
-    # if cfg.trainer.get("auto_lr_find"):
-    #     print("auto_lr_find")
-    #     lr_finder = trainer.tuner.lr_find(model=model, datamodule=datamodule)
-    #     # Plot with
-    #     fig = lr_finder.plot(suggest=True)
-    #     fig.show()
-    #     # Pick point based on plot, or get suggestion
-    #     new_lr = lr_finder.suggestion()
-    #     print(f"New LR: {new_lr}")
-    #     # update hparams of the model
-    #     model.hparams.lr = new_lr
 
     global_step = trainer.global_step if trainer is not None else 0
     current_epoch = trainer.current_epoch if trainer is not None else 0 
@@ -138,7 +126,7 @@ def train(cfg: DictConfig) -> Tuple[dict, dict]:
         ppnet = torch.load(last_checkpoint)
         ppnet = ppnet.cuda()
 
-
+        
     ppnet = ppnet.cuda()
     module.eval()
     torch.set_grad_enabled(False)

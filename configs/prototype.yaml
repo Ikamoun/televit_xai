@@ -129,7 +129,7 @@ test: True
 ckpt_path: null
 
 # seed for random number generators in pytorch, numpy and python.random
-seed: 20220227
+seed: 42
 
 experiment_name: proto
 start_checkpoint: ''
@@ -137,10 +137,10 @@ early_stopping_patience_last_layer: 1000 #why
 warmup_step: 0
 finetune_steps: 10000
 joint_steps: 10000
-finetune_epochs: 2 #5
-joint_epochs: 10
-warmup_batch_size: 2
-joint_batch_size: 2
+finetune_epochs: 0 #5
+joint_epochs: 12 #15
+# warmup_batch_size: 2
+# joint_batch_size: 2
 
 _target_: src.models.module.PatchClassificationModule
 #model_dir: "/home/ines/televit_xai/model_output" #to do change this as global variable in .env file
@@ -148,13 +148,19 @@ results_dir: ${oc.env:RESULTS_DIR}
 training_phase: 1
 max_steps: 1000
 poly_lr_power: 0.9
-loss_weight_crs_ent: 1.0
+loss_weight_crs_ent: 2.0
 loss_weight_l1: 0.0001 # 0.0001 # fine tunining ( 64*2)  augmenter ou plus long 
-loss_weight_kld: 0.25  #diversity loss 0.25
+loss_weight_kld: 0.1  #diversity loss 0.25
+loss_weight_proto: 0.1
+
+loss_weight_ent: 0.02
+loss_weight_ortho: 0.001
+loss_weight_cluster: 0.01
+
 joint_optimizer_lr_features: 0.001  # data specific ratio unet et prototype unet 0.001, common 0.0001
 joint_optimizer_lr_add_on_layers: 0.001 #0.0001
 joint_optimizer_lr_prototype_vectors: 0.001 ## et ça
-joint_optimizer_weight_decay:  0.000001  # unet 0.000001 here 0.0005
+joint_optimizer_weight_decay: 0.000001  # unet 0.000001 here 0.0005
 warm_optimizer_lr_add_on_layers: 0.0001
 warm_optimizer_lr_prototype_vectors: 0.0001
 warm_optimizer_weight_decay: 0.000001
